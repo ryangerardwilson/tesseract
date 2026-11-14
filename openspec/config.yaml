@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  tesseract is a Go tmux session browser. The command is tesseract.
+  The same binary answers as km for keyd sticky keys.
+  Session snapshots persist through nebula's sql command, in the database
+  tesseract. The managed tmux layer is installed under ~/.config/tmux/.
+  The editable sticky-keys file is ~/.config/km/keyd.config.
+
+rules:
+  proposal:
+    - State the operator problem, outcome, scope, and non-goals.
+  specs:
+    - Use SHALL or MUST and concrete GIVEN/WHEN/THEN scenarios.
+  tasks:
+    - Include strict OpenSpec validation and the relevant Go tests.
+    - Mark a task complete only after the check has been run.

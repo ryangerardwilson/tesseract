@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target="${1:-}"
+window="${2:-}"
+pane="${3:-}"
+
+case "$target" in
+  [2-9]) ;;
+  *)
+    tmux display-message "Pane target must be 2-9"
+    exit 64
+    ;;
+esac
+
+if [[ -z "$window" || -z "$pane" ]]; then
+  tmux display-message "Missing tmux window or pane target"
+  exit 64
+fi
+
+current="$(tmux display-message -p -t "$window" '#{window_panes}')"
+case "$current" in
+  ''|*[!0-9]*)
+    tmux display-message "Could not read tmux pane count"
+    exit 1
+    ;;
+esac
+
+path="$(tmux display-message -p -t "$pane" '#{pane_current_path}')"
+
+while (( current < target )); do
+  if ! tmux split-window -h -t "$pane" -c "$path"; then
+    tmux display-message "Could not create $target panes; terminal may be too narrow"
+    exit 1
+  fi
+
+  ((current++))
+  tmux select-layout -t "$window" even-horizontal >/dev/null
+done
+
+tmux select-layout -t "$window" even-horizontal >/dev/null

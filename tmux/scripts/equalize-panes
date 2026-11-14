@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+window="${1:-}"
+
+if [[ -z "$window" ]]; then
+  tmux display-message "Missing tmux window target"
+  exit 64
+fi
+
+current="$(tmux display-message -p -t "$window" '#{window_panes}')"
+case "$current" in
+  ''|*[!0-9]*)
+    tmux display-message "Could not read tmux pane count"
+    exit 1
+    ;;
+esac
+
+if (( current < 2 )); then
+  exit 0
+fi
+
+# select-layout -E evens only the current pane's sibling group. Visit every
+# pane twice so an outer split is evened after an inner one, and the reverse.
+mapfile -t panes < <(tmux list-panes -t "$window" -F '#{pane_id}')
+for _ in 1 2; do
+  for pane in "${panes[@]}"; do
+    [[ -n "$pane" ]] || continue
+    tmux select-layout -t "$pane" -E >/dev/null
+  done
+done
