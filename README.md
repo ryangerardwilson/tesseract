@@ -1,6 +1,6 @@
 # tesseract
 
-`tesseract` is a small tmux session browser. Session snapshots persist through [nebula](https://github.com/ryangerardwilson/nebula), in the sql database `tesseract`.
+`tesseract` is a small tmux session browser. Session snapshots live in its own sqlite. [nebula](https://github.com/ryangerardwilson/nebula) `s3` backs that file up.
 
 This replaces shell-function glue and custom tmux chooser bindings with a real terminal app.
 

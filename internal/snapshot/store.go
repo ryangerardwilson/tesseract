@@ -1,11 +1,9 @@
 package snapshot
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -75,27 +73,27 @@ type paneRow struct {
 }
 
 func openDB(home string) (string, error) {
-	if err := migrateLegacyDatabase(home); err != nil {
+	_ = home
+	path := dbFile(databaseName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if err := ensure(); err != nil {
+	if err := migrateLegacyDatabase(path); err != nil {
 		return "", err
 	}
-	return databaseName, nil
+	if err := ensure(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
-// migrateLegacyDatabase renames the sqlx database tm to tesseract once.
-// Rows, including a live Grok session, stay in the database.
-func migrateLegacyDatabase(home string) error {
-	_ = home
-	if _, err := sqlxCall("rename", "database", legacyDatabaseName, databaseName); err != nil {
-		return fmt.Errorf("Unable to move the tm sql database: %w", err)
+func migrateLegacyDatabase(path string) error {
+	if err := adoptSQLite(filepath.Dir(path), legacyDatabaseName, path); err != nil {
+		return fmt.Errorf("Unable to move the tm sqlite database: %w", err)
 	}
 	return nil
 }
 
-// importLegacySnapshot copies ~/.tesseract/state/session_snapshot.json once.
-// imported_snapshot stays set so a later empty database does not read that file again.
 func importLegacySnapshot(home, dbPath string) error {
 	imported, err := metaHas(dbPath, importedSnapshotKey)
 	if err != nil {
@@ -372,11 +370,8 @@ func metaHas(dbPath, key string) (bool, error) {
 	return rows[0].N > 0, nil
 }
 
-func ensure() error {
-	if _, err := sqlxCall("create", "database", databaseName); err != nil {
-		return err
-	}
-	return sqlxMigrate(ormText())
+func ensure(dbPath string) error {
+	return prepareAppDB(dbPath, databaseName, ormText())
 }
 
 func ormText() string {
@@ -402,83 +397,13 @@ func sqlString(value string) string {
 }
 
 func queryJSON(dbPath, sql string, dest any) error {
-	_ = dbPath
-	raw, err := sqlxCall(databaseName, "query", "--json", sql)
-	if err != nil {
-		return err
-	}
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(raw), dest); err != nil {
-		return fmt.Errorf("sqlite json: %w", err)
-	}
-	return nil
+	return sqliteQueryJSON(dbPath, sql, dest)
 }
 
 func execSQL(dbPath, sql string) error {
-	_ = dbPath
-	file, err := os.CreateTemp("", databaseName+"-sql-*")
-	if err != nil {
+	if err := sqliteExec(dbPath, sql); err != nil {
 		return err
 	}
-	sqlPath := file.Name()
-	defer os.Remove(sqlPath)
-	if _, err := file.WriteString(sql); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	_, err = sqlxCall(databaseName, "exec", "--file", sqlPath)
-	return err
-}
-
-func sqlxBin() string {
-	if bin := os.Getenv("SQLX_BIN"); bin != "" {
-		return bin
-	}
-	path, err := exec.LookPath("sql")
-	if err != nil {
-		return "sql"
-	}
-	return path
-}
-
-func sqlxCall(args ...string) (string, error) {
-	cmd := exec.Command(sqlxBin(), args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return stdout.String(), fmt.Errorf("%s", msg)
-	}
-	return stdout.String(), nil
-}
-
-func sqlxMigrate(body string) error {
-	file, err := os.CreateTemp("", databaseName+"-orm-*")
-	if err != nil {
-		return err
-	}
-	name := file.Name()
-	defer os.Remove(name)
-	if _, err := file.WriteString(body); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	_, err = sqlxCall(databaseName, "migrate", name)
-	return err
+	publishObject(dbPath, databaseName)
+	return nil
 }

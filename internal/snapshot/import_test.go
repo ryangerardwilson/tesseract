@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -63,7 +62,7 @@ func TestLegacySnapshotImportsOnce(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("db mode = %o", info.Mode().Perm())
 	}
-	for _, dir := range []string{root, filepath.Join(root, "data"), filepath.Join(root, "orm")} {
+	for _, dir := range []string{root, filepath.Join(root, "data")} {
 		dirInfo, err := os.Stat(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -71,13 +70,6 @@ func TestLegacySnapshotImportsOnce(t *testing.T) {
 		if dirInfo.Mode().Perm() != 0o700 {
 			t.Fatalf("%s mode = %o", dir, dirInfo.Mode().Perm())
 		}
-	}
-	orm, err := os.ReadFile(filepath.Join(root, "orm", "tesseract"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(orm), "model pane\n") {
-		t.Fatalf("orm = %s", orm)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".sqlx")); !os.IsNotExist(err) {
 		t.Fatal("SQLX_ROOT was ignored")
