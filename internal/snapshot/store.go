@@ -404,6 +404,13 @@ func execSQL(dbPath, sql string) error {
 	if err := sqliteExec(dbPath, sql); err != nil {
 		return err
 	}
+	count, err := sessionCount(dbPath)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
 	publishObject(dbPath, databaseName)
 	return nil
 }

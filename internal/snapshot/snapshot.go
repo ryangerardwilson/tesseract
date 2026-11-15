@@ -65,8 +65,12 @@ func LoadSavedSnapshot(home string) (*SavedSnapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
-	if err := importLegacySnapshot(home, dbPath); err != nil {
-		return nil, err
+	// Tests keep the legacy JSON import under SQLX_ROOT. A running
+	// machine restores the s3 object and does not read that file.
+	if os.Getenv("SQLX_ROOT") != "" {
+		if err := importLegacySnapshot(home, dbPath); err != nil {
+			return nil, err
+		}
 	}
 	return readSavedSnapshot(dbPath)
 }

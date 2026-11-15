@@ -3,6 +3,7 @@ package snapshot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,10 +62,9 @@ func prepareAppDB(path, name, models string) error {
 		return err
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		_ = copyLegacyRuntime(path, name)
-	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		_ = restoreObject(path, name)
+		if err := restoreObject(path, name); err != nil && !errors.Is(err, errNotFound) {
+			return err
+		}
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -95,24 +95,7 @@ func writeSchemaFile(name, models string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte(models), 0o600)
 }
 
-func copyLegacyRuntime(path, name string) error {
-	if os.Getenv("SQLX_ROOT") != "" {
-		return nil
-	}
-	base := os.Getenv("XDG_RUNTIME_DIR")
-	if base == "" {
-		return nil
-	}
-	src := filepath.Join(base, "sqlx", name+".sqlite")
-	if src == path {
-		return nil
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return nil
-	}
-	return os.WriteFile(path, data, 0o600)
-}
+var errNotFound = errors.New("not found")
 
 func restoreObject(path, name string) error {
 	if os.Getenv("SQLX_ROOT") != "" {
@@ -122,26 +105,39 @@ func restoreObject(path, name string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	return exec.CommandContext(ctx, bin, args...).Run()
+	msg, err := runS3(bin, args)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(msg, "not found") {
+		return errNotFound
+	}
+	if strings.TrimSpace(msg) == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("s3 get s3://backups/%s.sqlite: %s", name, strings.TrimSpace(msg))
 }
 
 func publishObject(path, name string) {
 	if os.Getenv("SQLX_ROOT") != "" || path == "" {
 		return
 	}
+	if bin, args, err := s3Args("make", "bucket", "backups"); err == nil {
+		_, _ = runS3(bin, args)
+	}
 	bin, args, err := s3Args("put", path, "s3://backups/"+name+".sqlite")
 	if err != nil {
 		return
 	}
-	go runS3(bin, args)
+	_, _ = runS3(bin, args)
 }
 
-func runS3(bin string, args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+func runS3(bin string, args []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_ = exec.CommandContext(ctx, bin, args...).Run()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 func s3Args(action string, rest ...string) (string, []string, error) {
