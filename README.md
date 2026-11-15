@@ -79,7 +79,7 @@ fragments while still sourcing the active Omarchy theme from
 The installer writes and enables `tesseract-restore.service` and
 `tesseract-snapshot.timer` under `~/.config/systemd/user/`. Login restore runs once
 from the service, while the timer invokes the one-shot `tesseract snapshot sessions`
-command every 30 seconds. Looptab remains available for general automation but
+command every 15 minutes. Looptab remains available for general automation but
 does not schedule `tesseract` snapshots.
 
 The snapshot command does not overwrite the saved state when there are no live
@@ -182,7 +182,7 @@ tesseract open browser
 
 `tesseract open browser` opens the persistent terminal session browser.
 
-The installed systemd timer writes an automatic restore snapshot every 30 seconds.
+The installed systemd timer writes an automatic restore snapshot every 15 minutes.
 The persistent terminal browser also writes a snapshot in the background.
 Direct named-session flows and `tesseract open browser` also ensure the managed
 `index` session exists and that its `index` window is running `tesseract open browser`.

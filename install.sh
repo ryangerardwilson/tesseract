@@ -172,8 +172,8 @@ EOF
 Description=Periodically save tmux sessions managed by tesseract
 
 [Timer]
-OnActiveSec=30s
-OnUnitActiveSec=30s
+OnActiveSec=15min
+OnUnitActiveSec=15min
 AccuracySec=5s
 Unit=tesseract-snapshot.service
 

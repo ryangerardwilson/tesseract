@@ -212,7 +212,7 @@ esac
 	if err != nil {
 		t.Fatalf("read snapshot timer: %v", err)
 	}
-	for _, want := range []string{"OnActiveSec=30s", "OnUnitActiveSec=30s", "WantedBy=timers.target"} {
+	for _, want := range []string{"OnActiveSec=15min", "OnUnitActiveSec=15min", "WantedBy=timers.target"} {
 		if !strings.Contains(string(timer), want) {
 			t.Fatalf("snapshot timer missing %q:\n%s", want, timer)
 		}
