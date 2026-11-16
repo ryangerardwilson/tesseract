@@ -157,11 +157,11 @@ func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[s
 				}
 				resume := api.PaneAIResume(pane, processes, children)
 				snap := paneSnapshotForThread(api, pane, resume.ID, processes, children)
-				if resume.Kind == "c3po" && resume.ID != "" {
-					snap.Kind = "c3po"
+				if (resume.Kind == "c3po" || resume.Kind == "r2d2") && resume.ID != "" {
+					snap.Kind = resume.Kind
 					snap.Screen = resume.Screen
 					snap.CodexProfile = ""
-					snap = applyNamedWorkspace(snap, resume.Workspace, "c3po")
+					snap = applyNamedWorkspace(snap, resume.Workspace, resume.Kind)
 				} else {
 					snap = applyGrokWorkspace(snap, resume.Workspace)
 				}
@@ -381,11 +381,11 @@ func restoreCommand(pane PaneSnapshot) string {
 		// Grok supports --resume <session-id> (see ~/.grok/docs/user-guide/17-sessions.md)
 		return commandWithShellFallback("grok --resume " + tmux.ShellQuote(pane.CodexThreadID))
 	}
-	if pane.Kind == "c3po" {
+	if pane.Kind == "c3po" || pane.Kind == "r2d2" {
 		if pane.Screen == "" || pane.CodexThreadID == "" {
 			return ""
 		}
-		return commandWithShellFallback("c3po tui " + tmux.ShellQuote(pane.Screen) + " --resume " + tmux.ShellQuote(pane.CodexThreadID))
+		return commandWithShellFallback("r2d2 " + tmux.ShellQuote(pane.Screen) + " --resume " + tmux.ShellQuote(pane.CodexThreadID))
 	}
 	return ""
 }

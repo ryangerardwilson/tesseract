@@ -24,6 +24,26 @@ func TestC3poTUICommand(t *testing.T) {
 	if ok {
 		t.Fatalf("nlp is not a c3po screen: %q", screen)
 	}
+	screen, resume, ok = c3poTUICommand(ProcessInfo{
+		Comm: "r2d2",
+		Args: "r2d2 o --resume 01a17622-5fd9-7bc2-81ff-3e200a8c16b7",
+	})
+	if !ok || screen != "o" || resume != "01a17622-5fd9-7bc2-81ff-3e200a8c16b7" {
+		t.Fatalf("r2d2 screen %q resume %q ok %v", screen, resume, ok)
+	}
+	screen, _, ok = c3poTUICommand(ProcessInfo{Comm: "r2d2", Args: "r2d2 looptab"})
+	if !ok || screen != "looptab" {
+		t.Fatalf("r2d2 looptab %q %v", screen, ok)
+	}
+	if _, _, ok = c3poTUICommand(ProcessInfo{Comm: "r2d2", Args: "r2d2"}); ok {
+		t.Fatal("the menu is not a screen")
+	}
+	if _, _, ok = c3poTUICommand(ProcessInfo{Comm: "r2d2", Args: "r2d2 web"}); ok {
+		t.Fatal("web is not a restored screen")
+	}
+	if _, _, ok = c3poTUICommand(ProcessInfo{Comm: "r2d2", Args: "r2d2 nlp"}); ok {
+		t.Fatal("nlp is not a screen")
+	}
 }
 
 func TestMatchC3poActive(t *testing.T) {

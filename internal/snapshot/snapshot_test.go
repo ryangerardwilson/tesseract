@@ -39,7 +39,17 @@ func TestRestoreCommandReturnsToShellAfterAgentExit(t *testing.T) {
 		{
 			name: "c3po tui",
 			pane: PaneSnapshot{Kind: "c3po", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
-			want: `c3po tui 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+		},
+		{
+			name: "r2d2 screen",
+			pane: PaneSnapshot{Kind: "r2d2", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
+			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+		},
+		{
+			name: "r2d2 without a screen",
+			pane: PaneSnapshot{Kind: "r2d2", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7"},
+			want: "",
 		},
 		{
 			name: "c3po without a screen",

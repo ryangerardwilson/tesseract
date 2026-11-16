@@ -409,8 +409,8 @@ func (api *API) PaneAIResume(pane Pane, processes map[int]ProcessInfo, children 
 		}
 	}
 	for _, process := range paneProcs {
-		if id, screen, workspace, ok := c3poResumeForProcess(process, pane.CurrentPath); ok {
-			return Resume{ID: id, Workspace: workspace, Kind: "c3po", Screen: screen}
+		if id, screen, workspace, kind, ok := c3poResumeForProcess(process, pane.CurrentPath); ok {
+			return Resume{ID: id, Workspace: workspace, Kind: kind, Screen: screen}
 		}
 	}
 	return Resume{}
@@ -1084,7 +1084,46 @@ func isC3poBinary(process ProcessInfo) bool {
 	return filepath.Base(fields[0]) == "c3po"
 }
 
+func isR2D2Binary(process ProcessInfo) bool {
+	if process.Comm == "r2d2" {
+		return true
+	}
+	fields := strings.Fields(process.Args)
+	if len(fields) == 0 {
+		return false
+	}
+	return filepath.Base(fields[0]) == "r2d2"
+}
+
+func r2d2ScreenCommand(process ProcessInfo) (string, string, bool) {
+	fields := strings.Fields(process.Args)
+	screen := ""
+	resume := ""
+	for i := 1; i < len(fields); i++ {
+		field := fields[i]
+		if screen == "" && c3poScreens[field] {
+			screen = field
+			continue
+		}
+		if strings.HasPrefix(field, "--resume=") {
+			resume = strings.TrimPrefix(field, "--resume=")
+			continue
+		}
+		if field == "--resume" && i+1 < len(fields) {
+			resume = fields[i+1]
+			i++
+		}
+	}
+	if screen == "" {
+		return "", "", false
+	}
+	return screen, resume, true
+}
+
 func c3poTUICommand(process ProcessInfo) (string, string, bool) {
+	if isR2D2Binary(process) {
+		return r2d2ScreenCommand(process)
+	}
 	if !isC3poBinary(process) {
 		return "", "", false
 	}
@@ -1113,10 +1152,14 @@ func c3poTUICommand(process ProcessInfo) (string, string, bool) {
 	return screen, resume, true
 }
 
-func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, string, bool) {
+func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, string, string, bool) {
 	screen, resume, ok := c3poTUICommand(process)
 	if !ok {
-		return "", "", "", false
+		return "", "", "", "", false
+	}
+	kind := "c3po"
+	if isR2D2Binary(process) {
+		kind = "r2d2"
 	}
 	if row, found := matchC3poActive(readC3poActiveRows(), process.PID); found {
 		workspace := row.CWD
@@ -1126,12 +1169,12 @@ func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, 
 		if row.Screen != "" {
 			screen = row.Screen
 		}
-		return row.SessionID, screen, workspace, row.SessionID != ""
+		return row.SessionID, screen, workspace, kind, row.SessionID != ""
 	}
 	if resume != "" {
-		return resume, screen, paneCWD, true
+		return resume, screen, paneCWD, kind, true
 	}
-	return "", "", "", false
+	return "", "", "", "", false
 }
 
 func matchC3poActive(rows []c3poActive, pid int) (c3poActive, bool) {
