@@ -66,10 +66,12 @@ tesseract-managed key set from the live tmux server and then re-sources
 under `~/.config/tmux/tmux.conf.d/`. Use prefix-`q` after upgrading `tesseract` if
 your current tmux server was started with an older binding set.
 
-Alt+Enter equalizes the splits already open in the current window. It keeps
-that arrangement and resets each split so sibling panes share the space. A
-single pane stays as it is. Alt+2 through Alt+9 still add panes up to that
-count and lay them out in one even row.
+Alt+Enter equalizes the splits already open in every window of the current
+session. A window that is already one horizontal row keeps that arrangement
+and its panes are spread evenly. Any other layout becomes one even horizontal
+row, without adding or removing panes. A single pane stays as it is.
+Alt+2 through Alt+9 still add panes up to that count and lay them out in one
+even row.
 
 The managed tmux config keeps the session-picker shortcut and the pane, window,
 session, copy-mode, and status-bar setup repo-owned in separate ordered
