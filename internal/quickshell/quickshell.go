@@ -305,7 +305,7 @@ func visibleSessions(api *tmux.API) ([]tmux.Session, error) {
 			visible = append(visible, session)
 		}
 	}
-	return visible, nil
+	return snapshot.SessionsInRecencyOrder(api.Env["HOME"], visible), nil
 }
 
 func preferredAfterRemoval(previousOrder []string, removedName string, remainingSessions []tmux.Session) string {

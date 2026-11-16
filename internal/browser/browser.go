@@ -287,7 +287,7 @@ func (m model) refresh() tea.Cmd {
 			session.AgentIdle = status.Idle
 			visible = append(visible, session)
 		}
-		return refreshMsg{sessions: visible}
+		return refreshMsg{sessions: snapshot.SessionsInRecencyOrder(api.Env["HOME"], visible)}
 	}
 }
 

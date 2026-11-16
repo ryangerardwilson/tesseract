@@ -87,7 +87,7 @@ func writeRuntimeSnapshotAt(api *tmux.API, sessionOrder []string, now time.Time)
 	if _, err := pruneInactiveLiveSessions(api, saved, now); err != nil {
 		return nil, err
 	}
-	snapshot, err := captureRuntimeSnapshot(api, sessionOrder, savedSessionAccesses(saved), now.Unix())
+	snapshot, err := captureRuntimeSnapshot(api, sessionOrder, savedSessionAccesses(saved), saved, now.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -123,15 +123,19 @@ func WriteRuntimeSnapshotIfNonempty(api *tmux.API, sessionOrder []string) (*Save
 }
 
 func CaptureRuntimeSnapshot(api *tmux.API, sessionOrder []string) (*SavedSnapshot, error) {
-	return captureRuntimeSnapshot(api, sessionOrder, nil, time.Now().Unix())
+	return captureRuntimeSnapshot(api, sessionOrder, nil, nil, time.Now().Unix())
 }
 
-func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[string]int64, capturedAt int64) (*SavedSnapshot, error) {
+func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[string]int64, saved *SavedSnapshot, capturedAt int64) (*SavedSnapshot, error) {
 	sessions, err := liveNonIndexSessions(api)
 	if err != nil {
 		return nil, err
 	}
-	sessions = applySessionOrder(sessions, sessionOrder)
+	if len(sessionOrder) > 0 {
+		sessions = applySessionOrder(sessions, sessionOrder)
+	} else if saved != nil && len(saved.Sessions) > 0 {
+		sessions = orderSessionsByRecency(sessions, saved)
+	}
 	processes, children := api.ProcessTree()
 	sessionSnapshots := make([]SessionSnapshot, 0, len(sessions))
 	for _, session := range sessions {
