@@ -217,4 +217,11 @@ esac
 			t.Fatalf("snapshot timer missing %q:\n%s", want, timer)
 		}
 	}
+	restore, err := os.ReadFile(filepath.Join(homeDir, ".config", "systemd", "user", "tesseract-restore.service"))
+	if err != nil {
+		t.Fatalf("read restore service: %v", err)
+	}
+	if !strings.Contains(string(restore), "After=graphical-session-pre.target") {
+		t.Fatalf("restore service missing session PATH order:\n%s", restore)
+	}
 }

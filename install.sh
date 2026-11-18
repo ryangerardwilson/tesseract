@@ -148,6 +148,9 @@ write_systemd_user_units() {
   cat > "$TM_RESTORE_SERVICE" <<EOF
 [Unit]
 Description=Restore tmux sessions managed by tesseract
+# graphical-session-pre is reached only after uwsm has imported PATH.
+# Restoring earlier starts tmux without mise, so grok and codex are not found.
+After=graphical-session-pre.target
 
 [Service]
 Type=oneshot
