@@ -566,6 +566,7 @@ ShellRoot {
                     number: index + 1
                     agentTotal: modelData.agent_total || 0
                     agentWorking: modelData.agent_working || 0
+                    agentUnseen: modelData.agent_unseen || 0
                     showLabel: panel.showTileLabels
                     tileSize: panel.tileSize
                     x: stage.width / 2 - width / 2 + Math.cos(angle) * panel.orbitRadius

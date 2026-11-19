@@ -24,6 +24,9 @@ const sessionModel = "model session\n" +
 	"  id integer primary key\n" +
 	"  name text not null\n" +
 	"  last_accessed integer\n" +
+	"  agent_was_working integer\n" +
+	"  agent_settled_at integer\n" +
+	"  agent_seen_at integer\n" +
 	"  active_window_position integer not null\n" +
 	"  position integer not null\n"
 
@@ -49,6 +52,8 @@ const paneModel = "model pane\n" +
 type sessionRow struct {
 	Name                 string `json:"name"`
 	LastAccessed         *int64 `json:"last_accessed"`
+	AgentSettledAt       *int64 `json:"agent_settled_at"`
+	AgentSeenAt          *int64 `json:"agent_seen_at"`
 	ActiveWindowPosition int    `json:"active_window_position"`
 	Position             int    `json:"position"`
 }
@@ -135,8 +140,10 @@ func importLegacySnapshot(home, dbPath string) error {
 func replaceSnapshot(dbPath string, snapshot *SavedSnapshot) error {
 	var b strings.Builder
 	b.WriteString("BEGIN IMMEDIATE;\n")
+	writeAgentKeep(&b)
 	b.WriteString("DELETE FROM pane;\nDELETE FROM \"window\";\nDELETE FROM session;\nDELETE FROM meta;\n")
 	writeSessionRows(&b, snapshot)
+	writeAgentRestore(&b)
 	writeWindowRows(&b, snapshot)
 	writePaneRows(&b, snapshot)
 	fmt.Fprintf(&b, "INSERT INTO meta(key, value) VALUES (%s, %s), (%s, %s), (%s, '1');\n",
@@ -152,14 +159,16 @@ func writeSessionRows(b *strings.Builder, snapshot *SavedSnapshot) {
 	if len(snapshot.Sessions) == 0 {
 		return
 	}
-	b.WriteString("INSERT INTO session(name, last_accessed, active_window_position, position) VALUES\n")
+	b.WriteString("INSERT INTO session(name, last_accessed, agent_settled_at, agent_seen_at, active_window_position, position) VALUES\n")
 	for position, session := range snapshot.Sessions {
 		if position > 0 {
 			b.WriteString(",\n")
 		}
-		fmt.Fprintf(b, "(%s, %s, %d, %d)",
+		fmt.Fprintf(b, "(%s, %s, %s, %s, %d, %d)",
 			sqlString(session.Name),
 			sqlIntOrNull(session.LastAccessed),
+			sqlIntOrNull(session.AgentSettledAt),
+			sqlIntOrNull(session.AgentSeenAt),
 			session.ActiveWindowPosition,
 			position,
 		)
@@ -286,7 +295,7 @@ func readHeader(dbPath string) (int, int64, bool, error) {
 
 func readSessions(dbPath string) ([]SessionSnapshot, error) {
 	var sessions []sessionRow
-	if err := queryJSON(dbPath, "SELECT name, last_accessed, active_window_position, position FROM session ORDER BY position, id", &sessions); err != nil {
+	if err := queryJSON(dbPath, "SELECT name, last_accessed, agent_settled_at, agent_seen_at, active_window_position, position FROM session ORDER BY position, id", &sessions); err != nil {
 		return nil, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
 	var windows []windowRow
@@ -326,6 +335,8 @@ func readSessions(dbPath string) ([]SessionSnapshot, error) {
 		out = append(out, SessionSnapshot{
 			Name:                 row.Name,
 			LastAccessed:         lastAccessed,
+			AgentSettledAt:       derefInt(row.AgentSettledAt),
+			AgentSeenAt:          derefInt(row.AgentSeenAt),
 			ActiveWindowPosition: row.ActiveWindowPosition,
 			Windows:              windowsBySession[row.Name],
 		})

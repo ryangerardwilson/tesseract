@@ -11,6 +11,8 @@ Item {
     property int number: 0
     property int agentTotal: 0
     property int agentWorking: 0
+    property int agentUnseen: 0
+    readonly property bool showUnseen: agentWorking === 0 && agentUnseen > 0
     property bool showLabel: true
     property real tileSize: 88
     readonly property real badgeSize: Math.max(14, Math.min(20, tileSize * 0.24))
@@ -98,6 +100,76 @@ Item {
 
     }
 
+    Item {
+        id: unseenRing
+
+        readonly property real tick: Math.max(8, tile.tileSize * 0.11)
+        readonly property real hairline: Math.max(1.5, tile.tileSize * 0.018)
+
+        anchors.centerIn: halo
+        width: halo.width + 12
+        height: width
+        visible: tile.showUnseen
+        opacity: 0.22
+
+        Rectangle {
+            width: unseenRing.tick
+            height: unseenRing.hairline
+            radius: height / 2
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 1
+            color: tile.accent
+        }
+
+        Rectangle {
+            width: unseenRing.tick
+            height: unseenRing.hairline
+            radius: height / 2
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height - height - 1
+            color: tile.accent
+        }
+
+        Rectangle {
+            width: unseenRing.hairline
+            height: unseenRing.tick
+            radius: width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            x: 1
+            color: tile.accent
+        }
+
+        Rectangle {
+            width: unseenRing.hairline
+            height: unseenRing.tick
+            radius: width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            x: parent.width - width - 1
+            color: tile.accent
+        }
+
+        SequentialAnimation on opacity {
+            running: unseenRing.visible
+            loops: Animation.Infinite
+
+            NumberAnimation {
+                from: 0.22
+                to: 0.7
+                duration: 1200
+                easing.type: Easing.InOutSine
+            }
+
+            NumberAnimation {
+                from: 0.7
+                to: 0.22
+                duration: 1200
+                easing.type: Easing.InOutSine
+            }
+
+        }
+
+    }
+
     Rectangle {
         id: button
 
@@ -116,10 +188,12 @@ Item {
         anchors.topMargin: -2
         width: tile.agentTotal > 0 ? Math.min(30, tile.tileSize * 0.44) : Math.min(22, tile.tileSize * 0.34)
         height: Math.max(2, tile.tileSize * 0.035)
-        color: tile.accent
-        opacity: tile.agentWorking > 0 ? 1 : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38))
+        property real blink: 1
 
-        SequentialAnimation on opacity {
+        color: tile.accent
+        opacity: tile.agentWorking > 0 ? blink : (tile.showUnseen ? 0.45 : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38)))
+
+        SequentialAnimation on blink {
             running: tile.agentWorking > 0
             loops: Animation.Infinite
 

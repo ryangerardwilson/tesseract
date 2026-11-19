@@ -33,6 +33,8 @@ type WindowSnapshot struct {
 type SessionSnapshot struct {
 	Name                 string           `json:"name"`
 	LastAccessed         int64            `json:"last_accessed,omitempty"`
+	AgentSettledAt       int64            `json:"agent_settled_at,omitempty"`
+	AgentSeenAt          int64            `json:"agent_seen_at,omitempty"`
 	ActiveWindowPosition int              `json:"active_window_position"`
 	Windows              []WindowSnapshot `json:"windows"`
 }

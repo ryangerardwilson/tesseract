@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ryangerardwilson/tesseract/internal/assets"
 	"github.com/ryangerardwilson/tesseract/internal/snapshot"
@@ -28,6 +29,7 @@ type SessionPayloadItem struct {
 	AgentTotal   int    `json:"agent_total"`
 	AgentWorking int    `json:"agent_working"`
 	AgentIdle    int    `json:"agent_idle"`
+	AgentUnseen  int    `json:"agent_unseen"`
 }
 
 type SessionPayload struct {
@@ -69,7 +71,13 @@ func Payload(api *tmux.API, preferred string) (*SessionPayload, error) {
 	if err != nil {
 		return nil, err
 	}
-	statuses, _ := api.ListSessionAgentStatuses()
+	statuses, statusErr := api.ListSessionAgentStatuses()
+	var unseen map[string]bool
+	// Without pane statuses every session would look agentless and lose
+	// its settled time, so a failed scan leaves the saved state alone.
+	if statusErr == nil {
+		unseen, _ = snapshot.RecordAgentActivity(api.Env["HOME"], agentActivity(sessions, statuses), time.Now())
+	}
 	payload := &SessionPayload{
 		Sessions: make([]SessionPayloadItem, 0, len(sessions)),
 	}
@@ -77,18 +85,39 @@ func Payload(api *tmux.API, preferred string) (*SessionPayload, error) {
 		payload.Preferred = preferred
 	}
 	for _, session := range sessions {
-		status := statuses[session.Name]
-		payload.Sessions = append(payload.Sessions, SessionPayloadItem{
-			Name:         session.Name,
-			Attached:     session.Attached,
-			Windows:      session.Windows,
-			LastAttached: session.LastAttached,
-			AgentTotal:   status.Total,
-			AgentWorking: status.Working,
-			AgentIdle:    status.Idle,
-		})
+		payload.Sessions = append(payload.Sessions, payloadItem(session, statuses[session.Name], unseen[session.Name]))
 	}
 	return payload, nil
+}
+
+func payloadItem(session tmux.Session, status tmux.AgentStatus, unseen bool) SessionPayloadItem {
+	item := SessionPayloadItem{
+		Name:         session.Name,
+		Attached:     session.Attached,
+		Windows:      session.Windows,
+		LastAttached: session.LastAttached,
+		AgentTotal:   status.Total,
+		AgentWorking: status.Working,
+		AgentIdle:    status.Idle,
+	}
+	if unseen && status.Total > 0 && status.Working == 0 {
+		item.AgentUnseen = 1
+	}
+	return item
+}
+
+func agentActivity(sessions []tmux.Session, statuses map[string]tmux.AgentStatus) []snapshot.AgentActivity {
+	activity := make([]snapshot.AgentActivity, 0, len(sessions))
+	for _, session := range sessions {
+		status := statuses[session.Name]
+		activity = append(activity, snapshot.AgentActivity{
+			Name:     session.Name,
+			Attached: session.Attached > 0,
+			Total:    status.Total,
+			Working:  status.Working,
+		})
+	}
+	return activity
 }
 
 func WritePayload(api *tmux.API, dataPath, preferred string) error {
