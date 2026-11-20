@@ -563,7 +563,6 @@ ShellRoot {
                     iconName: ""
                     accent: root.accent
                     selected: index === root.selectedIndex
-                    number: index + 1
                     agentTotal: modelData.agent_total || 0
                     agentWorking: modelData.agent_working || 0
                     agentUnseen: modelData.agent_unseen || 0

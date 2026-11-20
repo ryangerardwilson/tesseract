@@ -8,15 +8,12 @@ Item {
     property string iconName: ""
     property color accent: "#ffffff"
     property bool selected: false
-    property int number: 0
     property int agentTotal: 0
     property int agentWorking: 0
     property int agentUnseen: 0
     readonly property bool showUnseen: agentWorking === 0 && agentUnseen > 0
     property bool showLabel: true
     property real tileSize: 88
-    readonly property real badgeSize: Math.max(14, Math.min(20, tileSize * 0.24))
-    readonly property real badgeMargin: Math.max(4, tileSize * 0.08)
 
     function iconSource(name) {
         if (!name)
@@ -206,28 +203,6 @@ Item {
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: tile.tileSize * 0.36
         font.weight: Font.Bold
-    }
-
-    Text {
-        anchors.right: button.right
-        anchors.top: button.top
-        anchors.rightMargin: tile.badgeMargin
-        anchors.topMargin: tile.badgeMargin
-        text: tile.number > 0 && tile.number < 10 ? tile.number : ""
-        color: tile.selected ? "#000000" : "#ffffff"
-        font.family: "JetBrainsMono Nerd Font"
-        font.pixelSize: Math.max(7, tile.badgeSize * 0.5)
-        font.weight: Font.Bold
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: tile.badgeSize
-            height: tile.badgeSize
-            radius: tile.badgeSize / 2
-            color: tile.selected ? tile.accent : Qt.rgba(1, 1, 1, 0.1)
-            z: -1
-        }
-
     }
 
     Text {
