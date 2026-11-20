@@ -86,6 +86,16 @@ Item {
             opacity: 0.5
         }
 
+        Rectangle {
+            width: Math.max(2, tile.tileSize * 0.025)
+            height: Math.max(9, tile.tileSize * 0.14)
+            radius: width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            x: 1
+            color: tile.accent
+            opacity: 0.5
+        }
+
         RotationAnimator on rotation {
             from: 0
             to: 360
@@ -169,17 +179,6 @@ Item {
         color: tile.selected ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.48)
         border.width: 1
         border.color: tile.selected ? tile.accent : Qt.rgba(1, 1, 1, 0.22)
-    }
-
-    Rectangle {
-        anchors.horizontalCenter: button.horizontalCenter
-        anchors.top: button.top
-        anchors.topMargin: -2
-        width: tile.agentTotal > 0 ? Math.min(30, tile.tileSize * 0.44) : Math.min(22, tile.tileSize * 0.34)
-        height: Math.max(2, tile.tileSize * 0.035)
-        visible: tile.agentWorking === 0
-        color: tile.accent
-        opacity: tile.showUnseen ? 0.7 + 0.3 * unseenRing.breath : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38))
     }
 
     Image {
