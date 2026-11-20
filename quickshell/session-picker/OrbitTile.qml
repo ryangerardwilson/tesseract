@@ -180,29 +180,9 @@ Item {
         anchors.topMargin: -2
         width: tile.agentTotal > 0 ? Math.min(30, tile.tileSize * 0.44) : Math.min(22, tile.tileSize * 0.34)
         height: Math.max(2, tile.tileSize * 0.035)
-        property real blink: 1
-
+        visible: tile.agentWorking === 0
         color: tile.accent
-        opacity: tile.agentWorking > 0 ? blink : (tile.showUnseen ? 0.7 + 0.3 * unseenRing.breath : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38)))
-
-        SequentialAnimation on blink {
-            running: tile.agentWorking > 0
-            loops: Animation.Infinite
-
-            NumberAnimation {
-                to: 0.36
-                duration: 520
-                easing.type: Easing.InOutSine
-            }
-
-            NumberAnimation {
-                to: 1
-                duration: 520
-                easing.type: Easing.InOutSine
-            }
-
-        }
-
+        opacity: tile.showUnseen ? 0.7 + 0.3 * unseenRing.breath : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38))
     }
 
     Image {
