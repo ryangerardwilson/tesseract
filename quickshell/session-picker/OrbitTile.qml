@@ -123,15 +123,6 @@ Item {
         }
 
         Rectangle {
-            width: unseenRing.tick
-            height: unseenRing.hairline
-            radius: height / 2
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: parent.height - height - 1
-            color: tile.accent
-        }
-
-        Rectangle {
             width: unseenRing.hairline
             height: unseenRing.tick
             radius: width / 2
