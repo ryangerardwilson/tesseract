@@ -103,14 +103,15 @@ Item {
     Item {
         id: unseenRing
 
-        readonly property real tick: Math.max(8, tile.tileSize * 0.11)
-        readonly property real hairline: Math.max(1.5, tile.tileSize * 0.018)
+        readonly property real tick: Math.max(14, tile.tileSize * 0.18)
+        readonly property real hairline: Math.max(2.5, tile.tileSize * 0.032)
+        property real breath: 0
 
         anchors.centerIn: halo
-        width: halo.width + 12
+        width: halo.width + 22
         height: width
         visible: tile.showUnseen
-        opacity: 0.22
+        opacity: 0.55 + 0.45 * breath
 
         Rectangle {
             width: unseenRing.tick
@@ -148,21 +149,21 @@ Item {
             color: tile.accent
         }
 
-        SequentialAnimation on opacity {
+        SequentialAnimation on breath {
             running: unseenRing.visible
             loops: Animation.Infinite
 
             NumberAnimation {
-                from: 0.22
-                to: 0.7
-                duration: 1200
+                from: 0
+                to: 1
+                duration: 800
                 easing.type: Easing.InOutSine
             }
 
             NumberAnimation {
-                from: 0.7
-                to: 0.22
-                duration: 1200
+                from: 1
+                to: 0
+                duration: 800
                 easing.type: Easing.InOutSine
             }
 
@@ -191,7 +192,7 @@ Item {
         property real blink: 1
 
         color: tile.accent
-        opacity: tile.agentWorking > 0 ? blink : (tile.showUnseen ? 0.45 : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38)))
+        opacity: tile.agentWorking > 0 ? blink : (tile.showUnseen ? 0.7 + 0.3 * unseenRing.breath : (tile.agentTotal > 0 ? 0.58 : (tile.selected ? 1 : 0.38)))
 
         SequentialAnimation on blink {
             running: tile.agentWorking > 0
