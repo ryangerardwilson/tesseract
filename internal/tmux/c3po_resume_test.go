@@ -66,3 +66,19 @@ func TestMatchC3poActive(t *testing.T) {
 		t.Fatal("stale pid start matched")
 	}
 }
+
+func TestParseC3poActiveRows(t *testing.T) {
+	out := []byte(`[{"session_id":"01a17622-5fd9-7bc2-81ff-3e200a8c16b7","pid":7,"pid_start":99,"screen":"o","cwd":"/work"},` +
+		`{"session_id":"01a17622-5fd9-7bc2-81ff-3e200a8c16b8","pid":8,"pid_start":0,"screen":"","cwd":""}]`)
+	rows := parseC3poActiveRows(out)
+	if len(rows) != 2 {
+		t.Fatalf("rows %+v", rows)
+	}
+	want := c3poActive{SessionID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", PID: 7, PIDStart: 99, Screen: "o", CWD: "/work"}
+	if rows[0] != want || rows[1].PID != 8 || rows[1].Screen != "" {
+		t.Fatalf("rows %+v", rows)
+	}
+	if parseC3poActiveRows([]byte("")) != nil {
+		t.Fatal("empty output")
+	}
+}

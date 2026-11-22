@@ -1063,6 +1063,8 @@ var c3poScreens = map[string]bool{
 	"looptab":   true,
 }
 
+// c3poActive is one running c3po screen and the place its session holds, as
+// c3po __session active prints it. c3po owns screen sessions.
 type c3poActive struct {
 	SessionID string `json:"session_id"`
 	PID       int    `json:"pid"`
@@ -1192,39 +1194,24 @@ func matchC3poActive(rows []c3poActive, pid int) (c3poActive, bool) {
 }
 
 func readC3poActiveRows() []c3poActive {
-	bin := os.Getenv("SQLX_BIN")
-	if bin == "" {
-		found, err := exec.LookPath("sql")
-		if err != nil {
-			bin = "sql"
-		} else {
-			bin = found
-		}
-	}
-	cmd := exec.Command(bin, "c3po", "query", "--json", "SELECT body FROM record WHERE app = 'tui' AND kind = 'active'")
+	cmd := exec.Command("c3po", "__session", "active")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
+	return parseC3poActiveRows(out)
+}
+
+func parseC3poActiveRows(out []byte) []c3poActive {
 	text := strings.TrimSpace(string(out))
 	if text == "" {
 		return nil
 	}
-	var rows []struct {
-		Body string `json:"body"`
-	}
+	var rows []c3poActive
 	if err := json.Unmarshal([]byte(text), &rows); err != nil {
 		return nil
 	}
-	found := make([]c3poActive, 0, len(rows))
-	for _, row := range rows {
-		var active c3poActive
-		if err := json.Unmarshal([]byte(row.Body), &active); err != nil {
-			continue
-		}
-		found = append(found, active)
-	}
-	return found
+	return rows
 }
 
 func isTmBrowserProcess(process ProcessInfo) bool {
