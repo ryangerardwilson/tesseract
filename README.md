@@ -4,6 +4,8 @@
 
 This replaces shell-function glue and custom tmux chooser bindings with a real terminal app.
 
+Session snapshots every 15 minutes (and restore at login) keep parallel agent work durable and inspectable. A crashed or restarted environment comes back with its sessions, panes, and Codex and Grok conversations.
+
 ## Install
 
 Install the latest tagged release with:
@@ -250,3 +252,5 @@ tesseract attach session root
 If `root` already exists, `tesseract` attaches to it outside tmux or switches the current client to it inside tmux. If it does not exist yet, `tesseract` creates `root` first and then takes you there.
 
 When killing sessions, `tesseract` moves attached clients off the target session(s) before killing them. If there is no other session available, it creates a temporary fallback session so the kill can complete safely.
+
+Part of an open-source harness for shipping the smallest inspectable system that agents and operators can run and improve. See also [nebula](https://github.com/ryangerardwilson/nebula), [c3po](https://github.com/ryangerardwilson/c3po), [r2d2](https://github.com/ryangerardwilson/r2d2), [crusade](https://github.com/ryangerardwilson/crusade), [tesseract](https://github.com/ryangerardwilson/tesseract).
