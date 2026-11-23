@@ -140,7 +140,7 @@ func (m model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveLayer(-1)
 	case "j", "down":
 		m.moveLayer(1)
-	case "enter":
+	case "enter", "ctrl+m":
 		if target, ok := m.selected(); ok && m.carried == nil {
 			m.target = &target
 			return m, tea.Quit

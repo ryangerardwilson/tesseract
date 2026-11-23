@@ -47,6 +47,13 @@ Item {
     // The chosen electron's idle swing along its shell, from -1 to 1.
     property real drift: 0
     property real breath: 0
+    // How brightly the nucleus blooms, from 0 to 1: once as the shells open,
+    // and briefly as each move settles.
+    property real bloom: 0
+    // The light is white, a little warmer toward the core and cooler toward
+    // the rim.
+    readonly property color warm: Qt.rgba(1, 0.955, 0.9, 1)
+    readonly property color cool: Qt.rgba(0.87, 0.925, 1, 1)
     readonly property real step: eye.step(workspaces.length)
     readonly property int owner: workspaces.length > 0 ? stage.place(Math.round(orbit), workspaces.length) : -1
     readonly property real ownerOffset: Math.round(orbit) - orbit
@@ -58,6 +65,7 @@ Item {
     readonly property var spots: layerSpots()
     readonly property var shells: shellPoses()
     readonly property var electrons: electronPoses()
+    readonly property var dust: dustPoses()
     readonly property var selectedWorkspace: column < workspaces.length ? workspaces[column] : null
     readonly property int layerCount: selectedWorkspace ? (selectedWorkspace.layers || []).length : 0
     readonly property real rushFade: 1 - eye.smooth(0, 0.45, rush)
@@ -77,6 +85,21 @@ Item {
         stage.depth = stage.layerSteps;
         stage.leavingDepth = stage.layerSteps;
         opening.restart();
+        // The nucleus blooms as its shells start to open.
+        stage.bloom = 0;
+        stage.bloomAt(420, 1, 240, 1100);
+    }
+
+    // bloomAt blooms the nucleus from wherever its bloom stands: after
+    // `delay` ms it rises to `peak`, or holds a brighter bloom, for `rise`
+    // ms, then fades for `fall` ms. It never holds a key back.
+    function bloomAt(delay, peak, rise, fall) {
+        blooming.stop();
+        bloomDelay.duration = delay;
+        bloomRise.to = Math.max(peak, stage.bloom);
+        bloomRise.duration = rise;
+        bloomFall.duration = fall;
+        blooming.start();
     }
 
     // place is the index an unbounded position lands on among `count`.
@@ -207,8 +230,10 @@ Item {
             const reach = eye.mix(eye.skin, eye.shellReach(spot.along), out) * center.size;
             const shown = light > 0.004;
             poses.push({
+                "along": spot.along,
                 "light": light,
                 "weight": spot.weight,
+                "tint": stage.shade(spot.along),
                 "back": shown ? eye.ring(center.worldX, center.worldZ, reach, -1) : [],
                 "front": shown ? eye.ring(center.worldX, center.worldZ, reach, 1) : []
             });
@@ -216,27 +241,51 @@ Item {
         return poses;
     }
 
+    // shimmer is how brightly the soft band of the shell `along` layers
+    // deeper than the selection shines: each breath of the halo carries the
+    // light out through the shells and back in.
+    function shimmer(along) {
+        const lead = 0.13 * Math.max(0, along);
+        return 0.3 + 0.7 * eye.smooth(lead, lead + 0.48, stage.breath);
+    }
+
+    // shade is the tint of the shell `along` layers deeper than the
+    // selection: warmer as it sinks onto the core, cooler further out.
+    function shade(along) {
+        const warmth = eye.smooth(0, 1.5, -along);
+        const chill = eye.smooth(0, 3.5, along);
+        const warm = stage.warm;
+        const cool = stage.cool;
+        return Qt.rgba(1 - (1 - warm.r) * warmth - (1 - cool.r) * chill, 1 - (1 - warm.g) * warmth - (1 - cool.g) * chill, 1 - (1 - warm.b) * warmth - (1 - cool.b) * chill, 1);
+    }
+
     // electronPoses places each layer's electron on its shell. The chosen one
-    // drifts a little along its shell while the picture rests, and rushes
-    // toward the eye on Enter. Like the shells, each layer has one electron
-    // in each of the two laps.
+    // drifts a little along its shell while the picture rests, trailing a
+    // little light along it, and rushes toward the eye on Enter, leaving a
+    // streak. Like the shells, each layer has one electron in each of the two
+    // laps.
     function electronPoses() {
         const poses = [];
         const out = stage.shellsOut;
         const center = stage.nucleus;
         const turn = stage.ownerOffset * stage.step - (1 - out) * 1.7;
         const count = stage.ownerLayers.length;
+        const trailing = 1 - eye.smooth(0, 0.3, stage.rush);
         for (let index = 0; index < stage.spots.length; index++) {
             const spot = stage.spots[index];
             const along = spot.along;
             const chosen = spot.chosen;
             const reach = eye.mix(eye.skin, eye.shellReach(along), out) * center.size;
             const home = spot.home;
-            const rest = eye.electronPose(center.worldX, center.worldZ, reach, home + turn + chosen * stage.drift * 0.13);
+            const side = home >= 0 ? 1 : -1;
+            const angle = home + turn + chosen * stage.drift * 0.13;
+            const rest = eye.electronPose(center.worldX, center.worldZ, reach, angle);
             const rushing = stage.owner === stage.column && index % count === stage.chosenLayer;
             const at = rushing ? eye.rushPose(rest, stage.rush) : rest;
             const fade = along < 0 ? 1 - eye.smooth(0, 0.55, -along) : 1 - eye.smooth(eye.deepestShown, eye.deepestShown + 1, along);
             const lift = spot.carried ? stage.lift : 0;
+            const trail = chosen * trailing;
+            const streaking = rushing && stage.rush > 0;
             poses.push({
                 "x": at.x,
                 "y": at.y,
@@ -245,9 +294,56 @@ Item {
                 "chosen": chosen,
                 "carried": lift,
                 "light": spot.glow,
-                "side": home >= 0 ? 1 : -1,
+                "side": side,
                 "grow": at.scale / rest.scale,
-                "shown": fade * eye.smooth(0.45, 1, out) * (rushing ? 1 - eye.smooth(0.8, 1, stage.rush) : stage.rushFade) * spot.lap
+                "shown": fade * eye.smooth(0.45, 1, out) * (rushing ? 1 - eye.smooth(0.8, 1, stage.rush) : stage.rushFade) * spot.lap,
+                "trail": trail > 0.01 ? stage.trailPath(center, reach, angle, side, at) : [],
+                "trailLight": trail,
+                "streak": streaking ? stage.streakPath(rest, at) : [],
+                "streakLight": streaking ? eye.smooth(0, 0.12, stage.rush) : 0
+            });
+        }
+        return poses;
+    }
+
+    // trailPath is the chosen electron's trail: points along its shell from
+    // the electron back toward the front of the shell, away from its title,
+    // relative to where the electron is drawn. It stretches a little as the
+    // electron swings out.
+    function trailPath(center, reach, angle, side, at) {
+        const length = eye.trailLength * (1 + 0.25 * side * stage.drift);
+        return eye.arc(center.worldX, center.worldZ, reach, angle, angle - side * length, 10).map((point) => {
+            return Qt.point(point.x - at.x, point.y - at.y);
+        });
+    }
+
+    // streakPath is the rushing electron's streak: points from where it is
+    // back to where it was a moment before, relative to where it is.
+    function streakPath(rest, at) {
+        const tail = eye.rushPose(rest, Math.max(0, stage.rush - 0.55));
+        const points = [];
+        for (let i = 0; i <= 6; i++)
+            points.push(Qt.point((tail.x - at.x) * i / 6, (tail.y - at.y) * i / 6));
+        return points;
+    }
+
+    // dustPoses places the orbit's dust. Every mote turns with the orbit and
+    // the opening spin, so the dust travels with the workspaces, and the
+    // motes are brighter and larger toward the front.
+    function dustPoses() {
+        const poses = [];
+        const turn = stage.spin - stage.orbit * stage.step;
+        for (let index = 0; index < eye.moteCount; index++) {
+            const mote = eye.mote(index);
+            const angle = mote.angle + turn;
+            const at = eye.project(mote.reach * Math.sin(angle), mote.height, -mote.reach * Math.cos(angle));
+            const facing = 0.5 + 0.5 * Math.cos(angle);
+            poses.push({
+                "x": at.x,
+                "y": at.y,
+                "depth": at.depth,
+                "size": mote.size * 2.4 * at.scale,
+                "light": 0.1 + 0.9 * facing * facing
             });
         }
         return poses;
@@ -273,6 +369,7 @@ Item {
         }
         stage.heldColumn = stage.column;
         stage.orbit = stage.columnSteps;
+        stage.bloomAt(0, 0.6, 260, 700);
     }
     onCarryingChanged: {
         if (stage.carrying)
@@ -284,6 +381,7 @@ Item {
         if (stage.owner === stage.column) {
             sink.to = stage.layerSteps;
             sink.restart();
+            stage.bloomAt(0, 0.4, 220, 560);
         } else {
             sink.stop();
             stage.depth = stage.layerSteps;
@@ -311,8 +409,9 @@ Item {
             x: eye.centerX
             y: eye.centerY
             z: -10000000
-            radius: eye.nucleusRadius * 4.6 * eye.unit * eye.focal / eye.distance
-            strength: (0.07 + 0.025 * stage.breath) * stage.rushFade
+            radius: eye.nucleusRadius * (4.6 + 0.8 * stage.bloom) * eye.unit * eye.focal / eye.distance
+            strength: (0.07 + 0.025 * stage.breath + 0.03 * stage.bloom) * stage.rushFade
+            color: stage.warm
         }
 
         SpaceRing {
@@ -320,6 +419,53 @@ Item {
             lens: eye
             points: eye.ring(0, 0, eye.orbitRadius, 0)
             light: 0.6 * stage.rushFade
+            color: stage.cool
+        }
+
+        // The orbit's dust: a thin band of motes that turns with the orbit,
+        // brighter toward the front and lit a little by the halo's breath.
+        Repeater {
+            model: eye.moteCount
+
+            Item {
+                id: speck
+
+                required property int index
+                readonly property var mote: stage.dust[index] || null
+
+                x: mote ? mote.x : 0
+                y: mote ? mote.y : 0
+                z: mote ? -mote.depth : 0
+                opacity: mote ? mote.light * (0.7 + 0.3 * stage.breath) * stage.rushFade : 0
+                visible: opacity > 0.01
+
+                Rectangle {
+                    readonly property real size: speck.mote ? speck.mote.size * 3.4 : 0
+
+                    x: -size / 2
+                    y: -size / 2
+                    width: size
+                    height: size
+                    radius: size / 2
+                    color: stage.cool
+                    opacity: 0.12
+                }
+
+                Rectangle {
+                    readonly property real size: speck.mote ? speck.mote.size : 0
+
+                    x: -size / 2
+                    y: -size / 2
+                    width: size
+                    height: size
+                    radius: size / 2
+                    antialiasing: true
+                    color: stage.cool
+                    opacity: 0.9
+                }
+
+            }
+
         }
 
         // Each workspace has one body in each of the two laps of the orbit.
@@ -332,12 +478,19 @@ Item {
                 space: stage.workspaces[index % stage.workspaces.length]
                 pose: eye.bodyPose(stage.orbitLaps.base + index - stage.orbit, stage.step, stage.spin)
                 active: space.id === stage.activeId
+                breath: stage.breath
+                bloom: stage.bloom
+                sway: stage.drift
+                warm: stage.warm
+                cool: stage.cool
                 opacity: stage.rushFade * (index < stage.workspaces.length ? stage.orbitLaps.here : stage.orbitLaps.next)
                 visible: opacity > 0.004
             }
 
         }
 
+        // Each shell is a ring, the half behind the nucleus and the half in
+        // front, over a soft band that shimmers as the halo breathes.
         Repeater {
             model: stage.ownerLayers.length * 2
 
@@ -348,8 +501,10 @@ Item {
                 z: -stage.nucleus.depth - 0.5
                 lens: eye
                 points: shell ? shell.back : []
-                light: shell ? shell.light : 0
+                light: shell ? shell.light * (1 + 0.5 * stage.bloom) : 0
                 weight: shell ? shell.weight : 1
+                shimmer: shell ? stage.shimmer(shell.along) : 0
+                color: shell ? shell.tint : "white"
             }
 
         }
@@ -364,8 +519,10 @@ Item {
                 z: -stage.nucleus.depth + 0.5
                 lens: eye
                 points: shell ? shell.front : []
-                light: shell ? shell.light : 0
+                light: shell ? shell.light * (1 + 0.5 * stage.bloom) : 0
                 weight: shell ? shell.weight : 1
+                shimmer: shell ? stage.shimmer(shell.along) : 0
+                color: shell ? shell.tint : "white"
             }
 
         }
@@ -385,6 +542,8 @@ Item {
                 })
                 windowClass: String(client["class"] || "")
                 windowTitle: String(client.title || "")
+                breath: stage.breath
+                cool: stage.cool
             }
 
         }
@@ -502,6 +661,34 @@ Item {
                 easing.type: Easing.OutCubic
             }
 
+        }
+
+    }
+
+    // The nucleus's bloom: it waits, rises from wherever it stands, then
+    // fades. bloomAt() sets it going.
+    SequentialAnimation {
+        id: blooming
+
+        PauseAnimation {
+            id: bloomDelay
+        }
+
+        NumberAnimation {
+            id: bloomRise
+
+            target: stage
+            property: "bloom"
+            easing.type: Easing.OutSine
+        }
+
+        NumberAnimation {
+            id: bloomFall
+
+            target: stage
+            property: "bloom"
+            to: 0
+            easing.type: Easing.InOutSine
         }
 
     }

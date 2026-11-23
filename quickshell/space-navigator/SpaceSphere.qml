@@ -4,13 +4,17 @@ import QtQuick.Shapes
 // SpaceSphere is a glass sphere centred on its own position: a dark body that
 // hides what passes behind it, a bright rim, a soft highlight, a light inside
 // as `glow` rises, and a bloom around it. It is drawn at a fixed size and
-// scaled, and the curve renderer keeps every edge sharp at any size.
+// scaled, and the curve renderer keeps every edge sharp at any size. Its
+// light is white unless it is given a warmer core or a cooler rim.
 Item {
     id: sphere
 
     property real radius: 40
     property real light: 1
     property real glow: 0
+    // The tint of the light inside, and of the rim and the bloom around it.
+    property color core: "white"
+    property color rim: "white"
     // Children are laid out on the sphere's 200 by 200 face and scale with it.
     default property alias content: face.data
 
@@ -40,17 +44,17 @@ Item {
 
                     GradientStop {
                         position: 0.55
-                        color: Qt.rgba(1, 1, 1, (0.05 + 0.11 * sphere.glow) * sphere.light)
+                        color: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, (0.05 + 0.11 * sphere.glow) * sphere.light)
                     }
 
                     GradientStop {
                         position: 0.7
-                        color: Qt.rgba(1, 1, 1, (0.018 + 0.04 * sphere.glow) * sphere.light)
+                        color: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, (0.018 + 0.04 * sphere.glow) * sphere.light)
                     }
 
                     GradientStop {
                         position: 1
-                        color: Qt.rgba(1, 1, 1, 0)
+                        color: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, 0)
                     }
 
                 }
@@ -93,22 +97,22 @@ Item {
 
                     GradientStop {
                         position: 0
-                        color: Qt.rgba(1, 1, 1, 0.5 * sphere.glow)
+                        color: Qt.rgba(sphere.core.r, sphere.core.g, sphere.core.b, 0.5 * sphere.glow)
                     }
 
                     GradientStop {
                         position: 0.45
-                        color: Qt.rgba(1, 1, 1, 0.2 * sphere.glow)
+                        color: Qt.rgba(sphere.core.r, sphere.core.g, sphere.core.b, 0.2 * sphere.glow)
                     }
 
                     GradientStop {
                         position: 0.85
-                        color: Qt.rgba(1, 1, 1, 0.05 * sphere.glow)
+                        color: Qt.rgba(sphere.core.r, sphere.core.g, sphere.core.b, 0.05 * sphere.glow)
                     }
 
                     GradientStop {
                         position: 1
-                        color: Qt.rgba(1, 1, 1, 0)
+                        color: Qt.rgba(sphere.core.r, sphere.core.g, sphere.core.b, 0)
                     }
 
                 }
@@ -125,7 +129,7 @@ Item {
             }
 
             ShapePath {
-                strokeColor: Qt.rgba(1, 1, 1, (0.4 + 0.35 * sphere.glow) * sphere.light)
+                strokeColor: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, Math.min(1, (0.4 + 0.35 * sphere.glow) * sphere.light))
                 strokeWidth: Math.max(1.2, 1.1 / Math.max(0.01, face.scale))
 
                 fillGradient: RadialGradient {
@@ -153,12 +157,12 @@ Item {
 
                     GradientStop {
                         position: 0.9
-                        color: Qt.rgba(1, 1, 1, 0.1 * sphere.light)
+                        color: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, 0.1 * sphere.light)
                     }
 
                     GradientStop {
                         position: 1
-                        color: Qt.rgba(1, 1, 1, 0.38 * sphere.light)
+                        color: Qt.rgba(sphere.rim.r, sphere.rim.g, sphere.rim.b, 0.38 * sphere.light)
                     }
 
                 }

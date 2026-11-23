@@ -31,7 +31,6 @@ Item {
     // until the second m.
     property var carried: null
     property var carriedFrom: null
-    property bool raiseAfterMove: false
     readonly property bool carrying: carried !== null
     // The space as the picture shows it: with a window carried, as if it
     // were put down at the selected workspace and layer.
@@ -43,7 +42,8 @@ Item {
     // The host unmaps its window: Hyprland refuses window focus while an
     // exclusive layer surface is mapped.
     signal hideRequested()
-    // The focus or the move has run.
+    // The focus or the move has been started in its own session. The host
+    // closes; the command runs after the host layer is gone.
     signal finished()
     // Escape or q with no window carried.
     signal closeRequested()
@@ -167,9 +167,18 @@ Item {
         navigator.carried = navigator.selectedLayer;
     }
 
+    // commandAfterUnmap starts tesseract in its own session. setsid -f
+    // returns at once so the host can close. The command waits until this
+    // host's layer is gone, then focuses or moves. Hyprland refuses a
+    // window focus while that exclusive layer is mapped.
+    function commandAfterUnmap(action, workspace, address) {
+        const script = action === "move-focus" ? "export TESSERACT_SPACE_WAIT_LAYER=1; \"$0\" space move \"$1\" \"$2\" && exec \"$0\" space focus \"$1\" \"$2\"" : action === "move" ? "export TESSERACT_SPACE_WAIT_LAYER=1; exec \"$0\" space move \"$1\" \"$2\"" : "export TESSERACT_SPACE_WAIT_LAYER=1; exec \"$0\" space focus \"$1\" \"$2\"";
+        return ["setsid", "-f", "bash", "-c", script, navigator.command, workspace, address];
+    }
+
     // putDown leaves the window where h, j, k, and l carried it. Put down in
-    // a new place, the host unmaps, the window moves through `tesseract space
-    // move`, and the navigator finishes; put down where it was picked up,
+    // a new place, the host closes and the window moves through `tesseract
+    // space move` once the layer is gone; put down where it was picked up,
     // nothing changes.
     function putDown() {
         const from = navigator.carriedFrom;
@@ -180,14 +189,13 @@ Item {
         const workspace = String(navigator.selectedWorkspace.id);
         const address = String(navigator.carried.address);
         navigator.confirming = true;
-        mover.command = [navigator.command, "space", "move", workspace, address];
-        focuser.command = [navigator.command, "space", "focus", workspace, address];
         // At the front of another workspace, the move is the whole commit.
         // Behind another window, or back on its own workspace, no z-order
         // dispatcher has documented arguments, so focus lands it on top.
-        navigator.raiseAfterMove = navigator.chosenLayer > 0 || navigator.column === from.column;
+        const action = navigator.chosenLayer > 0 || navigator.column === from.column ? "move-focus" : "move";
+        focuser.command = navigator.commandAfterUnmap(action, workspace, address);
         navigator.hideRequested();
-        moveDelay.start();
+        focuser.running = true;
     }
 
     // cancelCarry puts the picture back where it stood before the first m,
@@ -210,7 +218,7 @@ Item {
             return ;
 
         navigator.confirming = true;
-        focuser.command = [navigator.command, "space", "focus", String(navigator.selectedWorkspace.id), String(navigator.selectedLayer.address)];
+        focuser.command = navigator.commandAfterUnmap("focus", String(navigator.selectedWorkspace.id), String(navigator.selectedLayer.address));
         // The chosen electron rushes out of its shell toward the eye first;
         // focusChosen runs when it arrives.
         stage.rushIn();
@@ -218,13 +226,19 @@ Item {
 
     function focusChosen() {
         // Hyprland refuses window focus while an exclusive layer surface is
-        // mapped, so the host unmaps first and the focus runs a beat later.
+        // mapped, so the host closes and the detached command focuses once
+        // that layer is gone.
         navigator.hideRequested();
-        focusDelay.start();
+        focuser.running = true;
     }
 
     function isEscapeKey(event) {
         return event.key === Qt.Key_Escape || (event.key === Qt.Key_BracketLeft && (event.modifiers & Qt.ControlModifier));
+    }
+
+    // Enter arrives as Ctrl+M, the same as in the session radial.
+    function isReturnKey(event) {
+        return event.key === Qt.Key_Return || event.key === Qt.Key_Enter || (event.key === Qt.Key_M && (event.modifiers & Qt.ControlModifier));
     }
 
     function handleKey(event) {
@@ -234,10 +248,10 @@ Item {
 
         if (navigator.isEscapeKey(event) || event.key === Qt.Key_Q)
             navigator.cancel();
+        else if (navigator.isReturnKey(event))
+            navigator.confirm();
         else if (event.key === Qt.Key_M)
             navigator.carry();
-        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-            navigator.confirm();
         else if (event.key === Qt.Key_Left || event.key === Qt.Key_H)
             navigator.moveColumn(-1);
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_L)
@@ -267,38 +281,9 @@ Item {
 
     }
 
-    Timer {
-        id: focusDelay
-
-        interval: 60
-        onTriggered: focuser.running = true
-    }
-
-    Timer {
-        id: moveDelay
-
-        interval: 60
-        onTriggered: mover.running = true
-    }
-
-    // The move runs once the host has unmapped, so no exclusive layer
-    // surface refuses a focus that comes with it; a raise then focuses the
-    // window through the same command Enter uses.
-    Process {
-        id: mover
-
-        running: false
-        onRunningChanged: {
-            if (running)
-                return ;
-
-            if (navigator.raiseAfterMove)
-                focuser.running = true;
-            else
-                navigator.finished();
-        }
-    }
-
+    // setsid -f returns as soon as the command is in its own session. The
+    // host closes on finished(); the command focuses or moves after the
+    // layer is gone.
     Process {
         id: focuser
 

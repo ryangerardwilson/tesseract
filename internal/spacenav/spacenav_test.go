@@ -171,6 +171,25 @@ func TestEnterChoosesTheSelectedLayer(t *testing.T) {
 	}
 }
 
+func TestCtrlMChoosesTheSelectedLayer(t *testing.T) {
+	m, cmd := press(newModel(testSpace()), "ctrl+m")
+
+	if !quits(cmd) {
+		t.Fatal("ctrl+m must close the navigator")
+	}
+	if m.carried != nil || m.target == nil || *m.target != (space.Target{Workspace: 3, Address: "0x3a"}) {
+		t.Fatalf("target = %+v carried = %+v, want workspace 3 layer 0x3a and no carry", m.target, m.carried)
+	}
+}
+
+func TestCtrlMWhileCarryingDoesNothing(t *testing.T) {
+	m, cmd := press(newModel(testSpace()), "m", "h", "ctrl+m")
+
+	if quits(cmd) || m.target != nil || m.placed != nil || m.carried == nil {
+		t.Fatal("ctrl+m while carrying must do nothing")
+	}
+}
+
 func TestEnterOnAnEmptyWorkspaceDoesNothing(t *testing.T) {
 	m, cmd := press(newModel(testSpace()), "l", "enter")
 

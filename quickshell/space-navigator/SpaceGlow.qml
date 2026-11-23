@@ -1,8 +1,8 @@
 import QtQuick
 import QtQuick.Shapes
 
-// SpaceGlow is a soft disc of white light centred on its own position,
-// brightest in the middle and gone at `radius`.
+// SpaceGlow is a soft disc of light centred on its own position, brightest
+// in the middle and gone at `radius`. It is white unless given a tint.
 Item {
     id: glow
 
@@ -10,6 +10,7 @@ Item {
     property real strength: 0.1
     // How far out, as a fraction of the radius, the light holds full strength.
     property real plateau: 0
+    property color color: "white"
 
     Shape {
         x: -100
@@ -32,27 +33,27 @@ Item {
 
                 GradientStop {
                     position: 0
-                    color: Qt.rgba(1, 1, 1, glow.strength)
+                    color: Qt.rgba(glow.color.r, glow.color.g, glow.color.b, glow.strength)
                 }
 
                 GradientStop {
                     position: glow.plateau
-                    color: Qt.rgba(1, 1, 1, glow.strength)
+                    color: Qt.rgba(glow.color.r, glow.color.g, glow.color.b, glow.strength)
                 }
 
                 GradientStop {
                     position: glow.plateau + (1 - glow.plateau) * 0.3
-                    color: Qt.rgba(1, 1, 1, glow.strength * 0.42)
+                    color: Qt.rgba(glow.color.r, glow.color.g, glow.color.b, glow.strength * 0.42)
                 }
 
                 GradientStop {
                     position: glow.plateau + (1 - glow.plateau) * 0.65
-                    color: Qt.rgba(1, 1, 1, glow.strength * 0.1)
+                    color: Qt.rgba(glow.color.r, glow.color.g, glow.color.b, glow.strength * 0.1)
                 }
 
                 GradientStop {
                     position: 1
-                    color: Qt.rgba(1, 1, 1, 0)
+                    color: Qt.rgba(glow.color.r, glow.color.g, glow.color.b, 0)
                 }
 
             }

@@ -240,18 +240,18 @@ Core actions:
 - `h` / `l` or left / right: turn the orbit so the workspace on the left or right swings to the front and becomes the nucleus, at its front layer
 - `k` or up: step one shell inward, toward the front layer
 - `j` or down: step one shell outward, to the next deeper layer; the shells ease inward until it is the tight, bright one
-- `enter`: the chosen satellite rushes toward you, then the overlay closes and focuses that workspace and window
+- `enter` or Ctrl+M: the chosen satellite rushes toward you, the overlay closes, and that workspace and window are focused once the overlay's layer is gone
 - `m`: pick up the lit electron's window; the footer says `MOVE`
 - while carrying, `h` / `l`: carry it to the workspace on the left or right, which swings to the front with the carried electron lit on its tight shell, at its front layer
 - while carrying, `j` / `k`: carry it one shell deeper or one shell toward the front; the other windows keep their order, and both wrap
 - while carrying, `m`: put it down; in a new place, the overlay closes and moves the window through `tesseract space move`
-- while carrying, `q` or `esc`: put the picture back where it was before the first `m` and dispatch nothing; `enter` does nothing
+- while carrying, `q` or `esc`: put the picture back where it was before the first `m` and dispatch nothing; `enter` and Ctrl+M do nothing
 - `q` or `esc`: close and leave the desktop as it was
 
 The overlay opens with the camera falling in toward the nucleus while the
 orbit settles out of a slow spin onto the active workspace. It draws its
 spheres and rings with Qt Quick shapes and does not need Qt Quick 3D.
-Moving and carrying never change anything; `enter` and the second `m` are the
+Moving and carrying never change anything; `enter`, Ctrl+M, and the second `m` are the
 only changes. A window put down at the front of another workspace is moved
 with one dispatch. Put down behind another window, or in a new place on its
 own workspace, it is moved and then focused, so it lands on top:

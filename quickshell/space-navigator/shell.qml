@@ -29,7 +29,10 @@ ShellRoot {
 
             anchors.fill: parent
             command: Quickshell.env("TESSERACT_SPACE_COMMAND") || "tesseract"
-            onHideRequested: panel.visible = false
+            onHideRequested: {
+                panel.WlrLayershell.keyboardFocus = WlrKeyboardFocus.None;
+                panel.visible = false;
+            }
             onFinished: Qt.quit()
             onCloseRequested: Qt.quit()
             Component.onCompleted: navigator.open()

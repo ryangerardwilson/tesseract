@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const Usage = "valid shape: tesseract space list | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address>"
@@ -64,6 +66,38 @@ type clientJSON struct {
 
 // addressRE keeps a target inside the Lua string of a dispatch.
 var addressRE = regexp.MustCompile(`^0x[0-9a-f]{1,16}$`)
+
+// waitLayerEnv asks Focus and Move to poll until the navigator layer is gone.
+// The Quickshell host starts the command in its own session and then closes.
+// Hyprland refuses window focus while that exclusive layer is mapped.
+const waitLayerEnv = "TESSERACT_SPACE_WAIT_LAYER"
+
+var (
+	hostLayerWait   = 50 * time.Millisecond
+	hostLayerGiveUp = 2 * time.Second
+)
+
+// waitForHostLayer returns immediately unless waitLayerEnv is set. It polls
+// hyprctl layers until omarchy-launcher and tesseract-space-navigator are
+// gone, or until hostLayerGiveUp. A layers error counts as gone.
+func waitForHostLayer(run Runner) {
+	if os.Getenv(waitLayerEnv) != "1" {
+		return
+	}
+	deadline := time.Now().Add(hostLayerGiveUp)
+	for {
+		out, err := run("layers", "-j")
+		if err != nil || !hostLayerMapped(out) || !time.Now().Before(deadline) {
+			return
+		}
+		time.Sleep(hostLayerWait)
+	}
+}
+
+func hostLayerMapped(out []byte) bool {
+	text := string(out)
+	return strings.Contains(text, "omarchy-launcher") || strings.Contains(text, "tesseract-space-navigator")
+}
 
 // Hyprctl runs the hyprctl on PATH.
 func Hyprctl(args ...string) ([]byte, error) {
@@ -221,6 +255,7 @@ func Focus(run Runner, target Target) error {
 	if !hasLayer(clients, target) {
 		return fmt.Errorf("no layer %s on workspace %d", target.Address, target.Workspace)
 	}
+	waitForHostLayer(run)
 	if err := dispatch(run, fmt.Sprintf(`hl.dsp.focus({ workspace = "%d" })`, target.Workspace)); err != nil {
 		return err
 	}
@@ -258,6 +293,7 @@ func Move(run Runner, target Target) error {
 	if from == target.Workspace {
 		return nil
 	}
+	waitForHostLayer(run)
 	return dispatch(run, fmt.Sprintf(`hl.dsp.window.move({ workspace = "%d", window = "address:%s" })`, target.Workspace, target.Address))
 }
 

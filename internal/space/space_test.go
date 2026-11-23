@@ -251,6 +251,49 @@ func TestFocusDispatchesWorkspaceThenWindow(t *testing.T) {
 	}
 }
 
+func TestFocusWaitsUntilTheHostLayerIsGone(t *testing.T) {
+	t.Setenv(waitLayerEnv, "1")
+	previous := hostLayerWait
+	hostLayerWait = 0
+	t.Cleanup(func() { hostLayerWait = previous })
+
+	var calls [][]string
+	layersLeft := 1
+	run := func(args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch args[0] {
+		case "clients":
+			return []byte(`[{"address":"0x1","mapped":true,"hidden":false,"workspace":{"id":1},"focusHistoryID":0}]`), nil
+		case "layers":
+			if layersLeft > 0 {
+				layersLeft--
+				return []byte(`{"namespace":"omarchy-launcher"}`), nil
+			}
+			return []byte(`{"namespace":"omarchy-shell"}`), nil
+		case "dispatch":
+			return []byte("ok"), nil
+		default:
+			return []byte("unknown"), errors.New("exit status 1")
+		}
+	}
+
+	err := Focus(run, Target{Workspace: 1, Address: "0x1"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"clients", "-j"},
+		{"layers", "-j"},
+		{"layers", "-j"},
+		{"dispatch", `hl.dsp.focus({ workspace = "1" })`},
+		{"dispatch", `hl.dsp.focus({ window = "address:0x1" })`},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %q, want %q", calls, want)
+	}
+}
+
 func TestFocusRefusesWithoutDispatch(t *testing.T) {
 	cases := []struct {
 		name   string

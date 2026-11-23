@@ -48,9 +48,20 @@ QtObject {
     readonly property var homes: [0.87, -0.87, 1.66, -1.66, 2.23, -2.23]
     // How close to the eye the chosen electron rushes on Enter.
     readonly property real rushDepth: 80
+    // How far back along its shell the chosen electron's trail reaches, in
+    // radians.
+    readonly property real trailLength: 0.42
+    // The orbit's dust: motes scattered in a band dustBand wide that runs
+    // along the orbit.
+    readonly property int moteCount: 24
+    readonly property real dustBand: 40
 
     function mix(from, to, amount) {
         return from + (to - from) * amount;
+    }
+
+    function fraction(value) {
+        return value - Math.floor(value);
     }
 
     function smooth(edge0, edge1, value) {
@@ -129,19 +140,38 @@ QtObject {
         return lens.homes[index % lens.homes.length];
     }
 
-    // ring is a whole ring in the equatorial plane as stage points. half
-    // selects the half nearer the eye (1), the far half (-1), or all (0).
-    function ring(centerX, centerZ, radius, half) {
+    // arc is the stage points along a ring of `radius` in the equatorial
+    // plane round (centerX, centerZ), from angle `from` to angle `to` in
+    // `count` steps. Angle 0 is the point nearest the eye.
+    function arc(centerX, centerZ, radius, from, to, count) {
         const points = [];
-        const count = half === 0 ? 96 : 48;
-        const start = half < 0 ? Math.PI / 2 : -Math.PI / 2;
-        const sweep = half === 0 ? Math.PI * 2 : Math.PI;
         for (let i = 0; i <= count; i++) {
-            const angle = start + sweep * i / count;
+            const angle = lens.mix(from, to, i / count);
             const at = lens.project(centerX + radius * Math.sin(angle), 0, centerZ - radius * Math.cos(angle));
             points.push(Qt.point(at.x, at.y));
         }
         return points;
+    }
+
+    // ring is a whole ring in the equatorial plane as stage points. half
+    // selects the half nearer the eye (1), the far half (-1), or all (0).
+    function ring(centerX, centerZ, radius, half) {
+        const start = half < 0 ? Math.PI / 2 : -Math.PI / 2;
+        const sweep = half === 0 ? Math.PI * 2 : Math.PI;
+        return lens.arc(centerX, centerZ, radius, start, start + sweep, half === 0 ? 96 : 48);
+    }
+
+    // mote is where dust mote `index` rests: its angle round the orbit from
+    // the front, its distance from the nucleus, its height off the plane,
+    // and its size. Golden-ratio steps scatter the motes evenly without a
+    // pattern.
+    function mote(index) {
+        return {
+            "angle": index * 2.39996,
+            "reach": lens.orbitRadius + lens.dustBand * (lens.fraction(index * 0.618034) - 0.5),
+            "height": 5 * (lens.fraction(index * 0.754878) - 0.5),
+            "size": 0.6 + 0.9 * lens.fraction(index * 0.56984)
+        };
     }
 
     // electronPose places an electron at `angle` on a shell of `radius`
