@@ -397,7 +397,7 @@ func restoreCommand(pane PaneSnapshot) string {
 }
 
 func commandWithShellFallback(command string) string {
-	return command + `; exec "${SHELL:-/bin/sh}"`
+	return `"${SHELL:-/bin/sh}" -lc ` + tmux.ShellQuote(command) + `; exec "${SHELL:-/bin/sh}"`
 }
 
 func liveNonIndexSessions(api *tmux.API) ([]tmux.Session, error) {

@@ -24,27 +24,27 @@ func TestRestoreCommandReturnsToShellAfterAgentExit(t *testing.T) {
 		{
 			name: "codex",
 			pane: PaneSnapshot{Kind: "codex", CodexThreadID: "codex-thread"},
-			want: `codex resume 'codex-thread'; exec "${SHELL:-/bin/sh}"`,
+			want: `"${SHELL:-/bin/sh}" -lc 'codex resume '"'"'codex-thread'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "glm through codex",
 			pane: PaneSnapshot{Kind: "codex", CodexThreadID: "glm-thread", CodexProfile: "zai"},
-			want: `codex --profile 'zai' resume 'glm-thread'; exec "${SHELL:-/bin/sh}"`,
+			want: `"${SHELL:-/bin/sh}" -lc 'codex --profile '"'"'zai'"'"' resume '"'"'glm-thread'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "grok",
 			pane: PaneSnapshot{Kind: "grok", CodexThreadID: "grok-session"},
-			want: `grok --resume 'grok-session'; exec "${SHELL:-/bin/sh}"`,
+			want: `"${SHELL:-/bin/sh}" -lc 'grok --resume '"'"'grok-session'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "c3po tui",
 			pane: PaneSnapshot{Kind: "c3po", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
-			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+			want: `"${SHELL:-/bin/sh}" -lc 'r2d2 '"'"'o'"'"' --resume '"'"'01a17622-5fd9-7bc2-81ff-3e200a8c16b7'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "r2d2 screen",
 			pane: PaneSnapshot{Kind: "r2d2", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
-			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+			want: `"${SHELL:-/bin/sh}" -lc 'r2d2 '"'"'o'"'"' --resume '"'"'01a17622-5fd9-7bc2-81ff-3e200a8c16b7'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "r2d2 without a screen",
