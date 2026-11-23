@@ -1,0 +1,67 @@
+[{
+    "id": -98,
+    "name": "special:musica-hidden",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x55d0000000a1",
+    "lastwindowtitle": "MUSICA",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+},{
+    "id": 3,
+    "name": "3",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 2,
+    "hasfullscreen": false,
+    "lastwindow": "0x55d0000000d4",
+    "lastwindowtitle": "Terminal",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+},{
+    "id": 1,
+    "name": "1",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 2,
+    "hasfullscreen": false,
+    "lastwindow": "0x55d0000000f6",
+    "lastwindowtitle": "notes.md - Editor",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+},{
+    "id": 2,
+    "name": "2",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 2,
+    "hasfullscreen": false,
+    "lastwindow": "0x55d0000000e5",
+    "lastwindowtitle": "Docs - Chromium",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+},{
+    "id": 4,
+    "name": "4",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 0,
+    "hasfullscreen": false,
+    "lastwindow": "0x0",
+    "lastwindowtitle": "",
+    "ispersistent": true,
+    "tiledLayout": "dwindle"
+},{
+    "id": -1337,
+    "name": "name:scratch",
+    "monitor": "eDP-1",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x55d000000129",
+    "lastwindowtitle": "scratch",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+}]

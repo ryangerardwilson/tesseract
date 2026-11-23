@@ -95,8 +95,12 @@ tesseract
 tesseract help
 tesseract open picker
 tesseract open browser
+tesseract open space
 tesseract quickshell list
 tesseract quickshell select root
+tesseract space list
+tesseract space focus 3 0x55d0000000d4
+tesseract space move 2 0x55d0000000d4
 tesseract reload bindings
 tesseract restore sessions
 tesseract snapshot sessions
@@ -204,6 +208,97 @@ Core actions:
 Outside tmux, `l` attaches to the selected session. Inside tmux, it switches the current client to that session.
 In the managed `index` session, the picker stays running in its original tmux pane after a switch and refreshes the session list, so ordering is updated when you jump back to it later.
 Sessions with actively working AI panes (Codex or Grok Build) show the same compact animated pulse used in `loc`.
+
+### Space Navigator
+
+```bash
+tesseract open space
+tesseract space list
+tesseract space focus 3 0x55d0000000d4
+tesseract space move 2 0x55d0000000d4
+```
+
+`tesseract open space` opens a Quickshell overlay that shows the Hyprland
+desktop as an atom with two axes. X is the normal workspaces (positive ids), by
+id; `special:` workspaces are not on it. The selected workspace is the nucleus,
+a glowing glass sphere at the centre with its number on it, and the other
+workspaces are smaller spheres on one orbit around it, seen nearly edge-on:
+lower ids to the left, higher ids to the right, smaller and dimmer as the orbit
+turns away. Z is the windows of the selected workspace, electrons on concentric
+shells around the nucleus: the front layer's shell is the tight, bright one,
+each deeper layer's shell is wider and dimmer, and each shell carries one
+satellite with its window's class and title. A window is a layer of the one
+workspace its `workspace.id` names, so a pinned window is not repeated on every
+workspace. Hidden and unmapped windows are not layers.
+
+Layers are ordered by `focusHistoryID` from `hyprctl clients -j`, compared only
+among the windows of one workspace: the lowest value, the window that workspace
+focused most recently, is the front layer.
+
+Core actions:
+
+- `h` / `l` or left / right: turn the orbit so the workspace on the left or right swings to the front and becomes the nucleus, at its front layer
+- `k` or up: step one shell inward, toward the front layer
+- `j` or down: step one shell outward, to the next deeper layer; the shells ease inward until it is the tight, bright one
+- `enter`: the chosen satellite rushes toward you, then the overlay closes and focuses that workspace and window
+- `m`: pick up the lit electron's window; the footer says `MOVE`
+- while carrying, `h` / `l`: carry it to the workspace on the left or right, which swings to the front with the carried electron lit on its tight shell, at its front layer
+- while carrying, `j` / `k`: carry it one shell deeper or one shell toward the front; the other windows keep their order, and both wrap
+- while carrying, `m`: put it down; in a new place, the overlay closes and moves the window through `tesseract space move`
+- while carrying, `q` or `esc`: put the picture back where it was before the first `m` and dispatch nothing; `enter` does nothing
+- `q` or `esc`: close and leave the desktop as it was
+
+The overlay opens with the camera falling in toward the nucleus while the
+orbit settles out of a slow spin onto the active workspace. It draws its
+spheres and rings with Qt Quick shapes and does not need Qt Quick 3D.
+Moving and carrying never change anything; `enter` and the second `m` are the
+only changes. A window put down at the front of another workspace is moved
+with one dispatch. Put down behind another window, or in a new place on its
+own workspace, it is moved and then focused, so it lands on top:
+`/usr/share/hypr` documents no arguments for a z-order dispatcher. The
+overlay reads the space from `tesseract space list`, focuses through
+`tesseract space focus`, and moves through `tesseract space move`; it never
+runs `hyprctl` itself. If the overlay cannot
+run, `tesseract open space` opens the same navigator in the terminal, with the
+same keys.
+
+The navigator is one component, `quickshell/space-navigator/SpaceNavigator.qml`.
+It owns the space, the selection, the keys, and the commands, and `SpaceStage`
+only draws. The overlay's `shell.qml` hosts it in a full-screen panel, and
+another Quickshell shell can host the same component: the host names the
+tesseract binary, calls `open()`, passes it the keys, hides its own window on
+`hideRequested()`, and closes on `finished()` and `closeRequested()`. A host
+with its own backdrop can clear the black void with `voidOpacity`.
+
+`tesseract space list` prints the space as JSON. `active` is the active
+workspace when it is on the X axis.
+
+```json
+{
+  "workspaces": [
+    {
+      "id": 3,
+      "name": "3",
+      "layers": [
+        {"address": "0x55d0000000d4", "class": "omarchy-terminal", "title": "Terminal"},
+        {"address": "0x55d0000000c3", "class": "org.pwmt.zathura", "title": "book.pdf"}
+      ]
+    }
+  ],
+  "active": 3
+}
+```
+
+`tesseract space focus <workspace-id> <address>` checks that the address is
+still a layer of that workspace, then runs
+`hyprctl dispatch 'hl.dsp.focus({ workspace = "<workspace-id>" })'` and
+`hyprctl dispatch 'hl.dsp.focus({ window = "address:<address>" })'`. It never
+moves a window.
+
+`tesseract space move <workspace-id> <address>` checks that the address is
+still a layer, then runs one dispatch,
+`hyprctl dispatch 'hl.dsp.window.move({ workspace = "<workspace-id>", window = "address:<address>" })'`.
+A window already on that workspace is not moved.
 
 ## Automatic Restore
 

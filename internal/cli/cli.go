@@ -17,7 +17,7 @@ import (
 	"github.com/ryangerardwilson/tesseract/internal/version"
 )
 
-const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract km config | tesseract km apply | tesseract km status"
+const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract open space | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract space list | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address> | tesseract km config | tesseract km apply | tesseract km status"
 
 const helpText = `tesseract
 tmux session picker and restore utility
@@ -39,6 +39,10 @@ features:
   # open browser
   tesseract open browser
 
+  open the hyprland navigator: workspaces left to right, each one's windows stacked front to back
+  # open space
+  tesseract open space
+
   clean tesseract-managed bindings from the live tmux server and reapply them
   # reload bindings
   tesseract reload bindings
@@ -59,6 +63,12 @@ features:
   # quickshell list | quickshell select <session_name>
   tesseract quickshell list
   tesseract quickshell select root
+
+  print the hyprland workspaces and their window layers as JSON, focus one layer, or move one window to a workspace
+  # space list | space focus <workspace_id> <address> | space move <workspace_id> <address>
+  tesseract space list
+  tesseract space focus 3 0x55d0000000d4
+  tesseract space move 2 0x55d0000000d4
 
   edit, install, or inspect the managed keyd sticky-keys config
   # km config | km apply | km status
@@ -103,6 +113,9 @@ func Run(argv []string, api *tmux.API, out io.Writer, errOut io.Writer) int {
 	}
 	if argv[0] == "km" {
 		return runKM(argv[1:], api, out, errOut)
+	}
+	if isSpaceCommand(argv) {
+		return runSpace(argv, api, out, errOut)
 	}
 
 	if shouldPrepareTmux(argv) {
