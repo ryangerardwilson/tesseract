@@ -19,14 +19,17 @@ type appModel struct {
 	name    string
 	cols    []appColumn
 	indexes []string
+	checks  []string
 }
 
 type appColumn struct {
-	name    string
-	typ     string
-	pk      bool
-	notNull bool
-	def     string
+	name       string
+	typ        string
+	pk         bool
+	notNull    bool
+	def        string
+	references string
+	onDelete   string
 }
 
 func dbFile(name string) string {
@@ -190,13 +193,17 @@ func sqliteRun(path, sql string, asJSON bool) (string, error) {
 	if bin == "" {
 		bin = "/usr/bin/sqlite3"
 	}
-	args := []string{"-batch", "-cmd", ".timeout 5000"}
+	// -bail stops at the first error, so a failed statement rolls back its
+	// whole transaction instead of letting COMMIT keep the rest. SQLite
+	// enforces foreign keys only on a connection that asks, and this sqlite3
+	// skips stdin when -bail meets a SQL -cmd, so the pragma leads the script.
+	args := []string{"-batch", "-bail", "-cmd", ".timeout 5000"}
 	if asJSON {
 		args = append(args, "-json")
 	}
 	args = append(args, path)
 	cmd := exec.Command(bin, args...)
-	cmd.Stdin = strings.NewReader(sql)
+	cmd.Stdin = strings.NewReader("PRAGMA foreign_keys = ON;\n" + sql)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -306,6 +313,11 @@ func parseModels(text string) []appModel {
 				continue
 			}
 			models[cur].indexes = append(models[cur].indexes, indexSQL(models[cur].name, fields))
+		case "check":
+			if cur < 0 {
+				continue
+			}
+			models[cur].checks = append(models[cur].checks, strings.Join(fields[1:], " "))
 		default:
 			if cur < 0 || len(fields) < 2 {
 				continue
@@ -335,6 +347,18 @@ func parseColumn(fields []string) appColumn {
 		case "default":
 			column.def = strings.Join(fields[i+1:], " ")
 			return column
+		case "references":
+			if i+1 < len(fields) {
+				column.references = fields[i+1]
+				i += 2
+				continue
+			}
+		case "on":
+			if i+2 < len(fields) && fields[i+1] == "delete" {
+				column.onDelete = fields[i+2]
+				i += 3
+				continue
+			}
 		}
 		i++
 	}
@@ -363,17 +387,14 @@ func indexSQL(table string, fields []string) string {
 }
 
 func createSQL(model appModel) string {
-	var b strings.Builder
-	b.WriteString("CREATE TABLE IF NOT EXISTS " + quoteIdent(model.name) + " (\n")
-	for i, column := range model.cols {
-		b.WriteString("  " + columnSQL(column))
-		if i+1 < len(model.cols) {
-			b.WriteString(",")
-		}
-		b.WriteString("\n")
+	lines := make([]string, 0, len(model.cols)+len(model.checks))
+	for _, column := range model.cols {
+		lines = append(lines, "  "+columnSQL(column))
 	}
-	b.WriteString(")")
-	return b.String()
+	for _, check := range model.checks {
+		lines = append(lines, "  CHECK "+check)
+	}
+	return "CREATE TABLE IF NOT EXISTS " + quoteIdent(model.name) + " (\n" + strings.Join(lines, ",\n") + "\n)"
 }
 
 func columnSQL(column appColumn) string {
@@ -387,6 +408,12 @@ func columnSQL(column appColumn) string {
 	if column.def != "" {
 		line += " DEFAULT " + column.def
 	}
+	if table, key, ok := strings.Cut(strings.TrimSuffix(column.references, ")"), "("); ok {
+		line += " REFERENCES " + quoteIdent(table) + "(" + quoteIdent(key) + ")"
+	}
+	if column.onDelete != "" {
+		line += " ON DELETE " + strings.ToUpper(column.onDelete)
+	}
 	return line
 }
 
@@ -398,21 +425,15 @@ func sqlQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-func runOnce(path, id, sql string) error {
-	if err := sqliteExec(path, "CREATE TABLE IF NOT EXISTS app_once (id TEXT PRIMARY KEY)"); err != nil {
-		return err
-	}
+func userVersion(path string) (int, error) {
 	var rows []struct {
-		N int `json:"n"`
+		Version int `json:"user_version"`
 	}
-	if err := sqliteQueryJSON(path, "SELECT COUNT(*) AS n FROM app_once WHERE id = "+sqlQuote(id), &rows); err != nil {
-		return err
+	if err := sqliteQueryJSON(path, "PRAGMA user_version", &rows); err != nil {
+		return 0, err
 	}
-	if len(rows) > 0 && rows[0].N > 0 {
-		return nil
+	if len(rows) == 0 {
+		return 0, nil
 	}
-	if err := sqliteExec(path, sql); err != nil {
-		return err
-	}
-	return sqliteExec(path, "INSERT INTO app_once(id) VALUES ("+sqlQuote(id)+")")
+	return rows[0].Version, nil
 }

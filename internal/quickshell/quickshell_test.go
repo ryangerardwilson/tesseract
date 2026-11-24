@@ -38,6 +38,8 @@ func TestValidateSessionName(t *testing.T) {
 	}
 }
 
+// Whether work is unseen is snapshot's rule (agentUnseen, which also covers
+// working and agentless sessions). The payload only carries its answer.
 func TestPayloadItemAgentUnseen(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -47,8 +49,6 @@ func TestPayloadItemAgentUnseen(t *testing.T) {
 	}{
 		{name: "idle with unseen work", status: tmux.AgentStatus{Total: 2, Idle: 2}, unseen: true, want: 1},
 		{name: "idle and seen", status: tmux.AgentStatus{Total: 1, Idle: 1}, want: 0},
-		{name: "working wins", status: tmux.AgentStatus{Total: 2, Working: 1, Idle: 1}, unseen: true, want: 0},
-		{name: "no agent panes", unseen: true, want: 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -86,9 +86,17 @@ func TestQuickshellListIncludesAgentUnseen(t *testing.T) {
 	api.Env["HOME"] = home
 	api.Env["TMUX"] = socketPath + ",0,0"
 
-	payload, err := APIPayload(api, []string{"list"})
+	encoded, err := APIPayload(api, []string{"list"})
 	if err != nil {
 		t.Fatalf("APIPayload(list) failed: %v", err)
+	}
+	data, err := json.Marshal(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
 	}
 	sessions, _ := payload["sessions"].([]any)
 	if len(sessions) != 1 {

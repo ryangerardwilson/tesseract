@@ -1,9 +1,11 @@
 package snapshot
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,37 +25,37 @@ func TestRestoreCommandReturnsToShellAfterAgentExit(t *testing.T) {
 	}{
 		{
 			name: "codex",
-			pane: PaneSnapshot{Kind: "codex", CodexThreadID: "codex-thread"},
-			want: `codex resume 'codex-thread'; exec "${SHELL:-/bin/sh}"`,
+			pane: PaneSnapshot{Kind: "codex", ResumeID: "codex-thread"},
+			want: `"${SHELL:-/bin/sh}" -lc 'codex resume '"'"'codex-thread'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "glm through codex",
-			pane: PaneSnapshot{Kind: "codex", CodexThreadID: "glm-thread", CodexProfile: "zai"},
-			want: `codex --profile 'zai' resume 'glm-thread'; exec "${SHELL:-/bin/sh}"`,
+			pane: PaneSnapshot{Kind: "codex", ResumeID: "glm-thread", CodexProfile: "zai"},
+			want: `"${SHELL:-/bin/sh}" -lc 'codex --profile '"'"'zai'"'"' resume '"'"'glm-thread'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "grok",
-			pane: PaneSnapshot{Kind: "grok", CodexThreadID: "grok-session"},
-			want: `grok --resume 'grok-session'; exec "${SHELL:-/bin/sh}"`,
+			pane: PaneSnapshot{Kind: "grok", ResumeID: "grok-session"},
+			want: `"${SHELL:-/bin/sh}" -lc 'grok --resume '"'"'grok-session'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "c3po tui",
-			pane: PaneSnapshot{Kind: "c3po", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
-			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+			pane: PaneSnapshot{Kind: "c3po", ResumeID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
+			want: `"${SHELL:-/bin/sh}" -lc 'r2d2 '"'"'o'"'"' --resume '"'"'01a17622-5fd9-7bc2-81ff-3e200a8c16b7'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "r2d2 screen",
-			pane: PaneSnapshot{Kind: "r2d2", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
-			want: `r2d2 'o' --resume '01a17622-5fd9-7bc2-81ff-3e200a8c16b7'; exec "${SHELL:-/bin/sh}"`,
+			pane: PaneSnapshot{Kind: "r2d2", ResumeID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7", Screen: "o"},
+			want: `"${SHELL:-/bin/sh}" -lc 'r2d2 '"'"'o'"'"' --resume '"'"'01a17622-5fd9-7bc2-81ff-3e200a8c16b7'"'"''; exec "${SHELL:-/bin/sh}"`,
 		},
 		{
 			name: "r2d2 without a screen",
-			pane: PaneSnapshot{Kind: "r2d2", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7"},
+			pane: PaneSnapshot{Kind: "r2d2", ResumeID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7"},
 			want: "",
 		},
 		{
 			name: "c3po without a screen",
-			pane: PaneSnapshot{Kind: "c3po", CodexThreadID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7"},
+			pane: PaneSnapshot{Kind: "c3po", ResumeID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7"},
 			want: "",
 		},
 		{
@@ -69,6 +71,117 @@ func TestRestoreCommandReturnsToShellAfterAgentExit(t *testing.T) {
 				t.Fatalf("restoreCommand() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+// tmux gives a new pane the PATH of the client that created it. At boot that
+// client can be the omarchy bar, whose status poll restores sessions with a
+// bare PATH, so a restored agent must not depend on the restoring PATH.
+func TestRestoreResumesAgentsWhenTmuxPathIsBare(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not installed")
+	}
+	const id = "01a1e190-c2f6-7332-9ceb-cd46670c350b"
+	tests := []struct {
+		tool string
+		pane PaneSnapshot
+		args []string
+	}{
+		{tool: "grok", pane: PaneSnapshot{Kind: "grok", ResumeID: id}, args: []string{"--resume", id}},
+		{tool: "codex", pane: PaneSnapshot{Kind: "codex", ResumeID: id, CodexProfile: "zai"}, args: []string{"--profile", "zai", "resume", id}},
+		{tool: "r2d2", pane: PaneSnapshot{Kind: "r2d2", ResumeID: id, Screen: "o"}, args: []string{"o", "--resume", id}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.tool, func(t *testing.T) {
+			home := loginProfileHome(t, bash, test.tool)
+			api := bareTmuxServer(t, home)
+			pane := test.pane
+			pane.CWD = filepath.Join(home, "workspace")
+			saved := &SavedSnapshot{Sessions: []SessionSnapshot{{
+				Name:    "agent",
+				Windows: []WindowSnapshot{{Name: test.tool, Panes: []PaneSnapshot{pane}}},
+			}}}
+			if result := RestoreSnapshot(api, saved); len(result.RestoredSessions) != 1 {
+				t.Fatalf("RestoreSnapshot() = %#v, want the agent session restored", result)
+			}
+			waitForFile(t, filepath.Join(home, "fallback"))
+			data, err := os.ReadFile(filepath.Join(home, test.tool+".args"))
+			if err != nil {
+				t.Fatalf("%s did not run: %v", test.tool, err)
+			}
+			got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+			want := append([]string{pane.CWD}, test.args...)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s ran as %q, want %q", test.tool, got, want)
+			}
+		})
+	}
+}
+
+// loginProfileHome is a home whose login profile alone puts tool on PATH. Its
+// shell records the fallback shell, the one started with no arguments.
+func loginProfileHome(t *testing.T, bash, tool string) string {
+	t.Helper()
+	home := t.TempDir()
+	for _, dir := range []string{"bare", "tools", "workspace"} {
+		if err := os.Mkdir(filepath.Join(home, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := []struct {
+		name string
+		mode os.FileMode
+		text string
+	}{
+		{name: ".bash_profile", mode: 0o644, text: `PATH="$HOME/tools:$PATH"` + "\n"},
+		{name: filepath.Join("tools", tool), mode: 0o755, text: "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$HOME/" + tool + ".args\"\n"},
+		{name: "shell", mode: 0o755, text: "#!" + bash + "\n[ \"$#\" -gt 0 ] || : > \"$HOME/fallback\"\nexec " + bash + " \"$@\"\n"},
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(home, file.name), []byte(file.text), file.mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
+
+// bareTmuxServer starts an isolated tmux server and returns an API that, like
+// the bar's status poll, reaches it with a PATH that holds none of the tools.
+func bareTmuxServer(t *testing.T, home string) *tmux.API {
+	t.Helper()
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep is not installed")
+	}
+	socketPath := filepath.Join(home, "tmux.sock")
+	bare := filepath.Join(home, "bare")
+	start := exec.Command("tmux", "-S", socketPath, "-f", "/dev/null", "new-session", "-d", "-s", "bar", sleep, "60")
+	start.Env = []string{"HOME=" + home, "PATH=" + bare, "SHELL=" + filepath.Join(home, "shell")}
+	if output, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start isolated tmux server: %v: %s", err, output)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("tmux", "-S", socketPath, "kill-server").Run()
+	})
+	return tmux.NewAPI(map[string]string{"HOME": home, "PATH": bare, "TMUX": socketPath + ",0,0"})
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not appear", path)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -257,7 +370,7 @@ func TestEmptyRuntimeDoesNotOverwriteSavedSnapshot(t *testing.T) {
 	}
 }
 
-func TestPaneSnapshotForThreadPreservesCodexProfile(t *testing.T) {
+func TestPaneSnapshotForResumePreservesCodexProfile(t *testing.T) {
 	tests := []struct {
 		name        string
 		process     tmux.ProcessInfo
@@ -295,15 +408,15 @@ func TestPaneSnapshotForThreadPreservesCodexProfile(t *testing.T) {
 			}
 			children := map[int][]int{10: {11}}
 
-			got := paneSnapshotForThread(api, pane, "agent-thread", processes, children)
+			got := paneSnapshotForResume(api, pane, "agent-thread", processes, children)
 			if got.Kind != test.wantKind {
 				t.Fatalf("Kind = %q, want %q", got.Kind, test.wantKind)
 			}
 			if got.CodexProfile != test.wantProfile {
 				t.Fatalf("CodexProfile = %q, want %q", got.CodexProfile, test.wantProfile)
 			}
-			if got.CodexThreadID != "agent-thread" {
-				t.Fatalf("CodexThreadID = %q, want agent-thread", got.CodexThreadID)
+			if got.ResumeID != "agent-thread" {
+				t.Fatalf("ResumeID = %q, want agent-thread", got.ResumeID)
 			}
 		})
 	}
@@ -311,7 +424,7 @@ func TestPaneSnapshotForThreadPreservesCodexProfile(t *testing.T) {
 
 func TestApplyGrokWorkspaceUsesSessionDirectory(t *testing.T) {
 	workspace := t.TempDir()
-	pane := PaneSnapshot{CWD: "/home/ryan", Kind: "grok", CodexThreadID: "01a16844-3a1f-7331-a0f7-73684c4ac73d"}
+	pane := PaneSnapshot{CWD: "/home/ryan", Kind: "grok", ResumeID: "01a16844-3a1f-7331-a0f7-73684c4ac73d"}
 	got := applyGrokWorkspace(pane, workspace)
 	if got.CWD != workspace {
 		t.Fatalf("CWD = %q, want session workspace %q", got.CWD, workspace)
@@ -326,7 +439,7 @@ func TestApplyGrokWorkspaceUsesSessionDirectory(t *testing.T) {
 	if shell.CWD != "/home/ryan" {
 		t.Fatalf("shell CWD = %q", shell.CWD)
 	}
-	codex := applyGrokWorkspace(PaneSnapshot{CWD: "/work", Kind: "codex", CodexThreadID: "thread"}, workspace)
+	codex := applyGrokWorkspace(PaneSnapshot{CWD: "/work", Kind: "codex", ResumeID: "thread"}, workspace)
 	if codex.CWD != "/work" {
 		t.Fatalf("codex CWD = %q", codex.CWD)
 	}

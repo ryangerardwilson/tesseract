@@ -17,6 +17,16 @@ func SessionsInRecencyOrder(home string, sessions []tmux.Session) []tmux.Session
 	return orderSessionsByRecency(sessions, saved)
 }
 
+// VisibleSessions is the session list a person picks from: every live session
+// but index, the most recently used first.
+func VisibleSessions(api *tmux.API) ([]tmux.Session, error) {
+	sessions, err := liveNonIndexSessions(api)
+	if err != nil {
+		return nil, err
+	}
+	return SessionsInRecencyOrder(api.Env["HOME"], sessions), nil
+}
+
 func orderSessionsByRecency(sessions []tmux.Session, saved *SavedSnapshot) []tmux.Session {
 	accesses := savedSessionAccesses(saved)
 	positions := savedSessionPositions(saved)

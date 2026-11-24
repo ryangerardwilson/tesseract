@@ -6,8 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ryangerardwilson/tesseract/internal/components/l1"
-	"github.com/ryangerardwilson/tesseract/internal/components/l3"
 	"github.com/ryangerardwilson/tesseract/internal/quickshell"
 	"github.com/ryangerardwilson/tesseract/internal/snapshot"
 	"github.com/ryangerardwilson/tesseract/internal/tmux"
@@ -15,7 +13,7 @@ import (
 
 type model struct {
 	api          *tmux.API
-	theme        l1.Theme
+	theme        Theme
 	allSessions  []tmux.Session
 	sessions     []tmux.Session
 	selected     int
@@ -58,7 +56,7 @@ func Run(api *tmux.API, persistent bool) int {
 	input.CharLimit = 80
 	m := model{
 		api:          api,
-		theme:        l1.DefaultTheme(),
+		theme:        DefaultTheme(),
 		mode:         "select",
 		input:        input,
 		status:       initialStatus,
@@ -111,7 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	return l3.RenderBrowser(m.theme, l3.BrowserState{
+	return RenderBrowser(m.theme, BrowserState{
 		Sessions: m.sessions,
 		Selected: m.selected,
 		Width:    m.width,
@@ -271,23 +269,18 @@ func (m model) selectedSession() string {
 func (m model) refresh() tea.Cmd {
 	api := m.api
 	return func() tea.Msg {
-		sessions, err := api.ListSessions(true)
+		sessions, err := snapshot.VisibleSessions(api)
 		if err != nil {
 			return refreshMsg{err: err}
 		}
 		statuses, _ := api.ListSessionAgentStatuses()
-		visible := make([]tmux.Session, 0, len(sessions))
-		for _, session := range sessions {
-			if session.Name == tmux.IndexSessionName {
-				continue
-			}
-			status := statuses[session.Name]
-			session.AgentTotal = status.Total
-			session.AgentWorking = status.Working
-			session.AgentIdle = status.Idle
-			visible = append(visible, session)
+		for i := range sessions {
+			status := statuses[sessions[i].Name]
+			sessions[i].AgentTotal = status.Total
+			sessions[i].AgentWorking = status.Working
+			sessions[i].AgentIdle = status.Idle
 		}
-		return refreshMsg{sessions: snapshot.SessionsInRecencyOrder(api.Env["HOME"], visible)}
+		return refreshMsg{sessions: sessions}
 	}
 }
 

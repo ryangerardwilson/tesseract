@@ -23,32 +23,14 @@ const (
 	listSessionsFormat = "#{session_name}\t#{session_attached}\t#{session_windows}\t#{session_last_attached}\t#{session_created}"
 	listWindowsFormat  = "#{window_index}\t#{window_name}\t#{window_active}\t#{window_layout}"
 	listPanesFormat    = "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}\t#{pane_pid}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_active}\t#{pane_title}"
-
-	defaultIndexKey = "M-i"
 )
 
 var (
 	rolloutPathRE        = regexp.MustCompile(`rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$`)
 	grokSessionPathRE    = regexp.MustCompile(`\.grok/sessions/([^/\s]+)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:/(events\.jsonl|updates\.jsonl|summary\.json))?`)
 	uuidRE               = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	managedIndexBindRE   = regexp.MustCompile(`^bind -n "([^"]+)" run-shell "TMUX_CLIENT_TTY=`)
 	errTmuxCommandFailed = errors.New("tmux command failed")
 )
-
-var managedPrefixKeys = []string{
-	"C-Space", "M-a", "q", "h", "v", "x", "r", "c", "k", "R", "C", "K", "P", "N",
-}
-
-var managedRootKeys = []string{
-	"C-i", "Tab", "C-Insert", "Insert", "F8", "F9", "F12", "M-h", "M-|", "M-\\",
-	"M-c", "M--", "M-v", "M-Home", "M-End", "M-DC", "M-p", "M-o", "M-l", "M-k",
-	"M-j", "M-H", "M-L", "M-K", "M-J", "C-M-Left", "C-M-Right", "C-M-Up",
-	"C-M-Down", "C-M-S-Left", "C-M-S-Down", "C-M-S-Up", "C-M-S-Right", "M-1",
-	"M-2", "M-3", "M-4", "M-5", "M-6", "M-7", "M-8", "M-9", "M-Left",
-	"M-Right", "M-S-Left", "M-S-Right", "M-Up", "M-Down",
-}
-
-var managedCopyModeVIKeys = []string{"v", "y", "M-v", "M-j", "M-k", "C-j", "C-k"}
 
 type AgentStatus struct {
 	Total   int
@@ -300,7 +282,7 @@ func (api *API) PaneCodexProfile(pane Pane, processes map[int]ProcessInfo, child
 	return ""
 }
 
-func (api *API) PaneAIProcessPID(pane Pane, processes map[int]ProcessInfo, children map[int][]int) int {
+func (api *API) PaneAgentProcessPID(pane Pane, processes map[int]ProcessInfo, children map[int][]int) int {
 	for _, process := range api.paneProcesses(pane, processes, children) {
 		if isCodexProcess(process) || isGrokProcess(process) || isClaudeProcess(process) {
 			return process.PID
@@ -336,44 +318,6 @@ func (api *API) PaneHasBrowserProcess(pane Pane, processes map[int]ProcessInfo, 
 	return false
 }
 
-func (api *API) PaneCodexThreadID(pane Pane, processes map[int]ProcessInfo, children map[int][]int) string {
-	if processes == nil || children == nil {
-		processes, children = api.ProcessTree()
-	}
-	codexProcesses := make([]ProcessInfo, 0)
-	for _, process := range api.paneProcesses(pane, processes, children) {
-		if isCodexProcess(process) {
-			codexProcesses = append(codexProcesses, process)
-		}
-	}
-	for _, process := range codexProcesses {
-		if threadID := rolloutThreadIDFromProcessFDs(process.PID); threadID != "" {
-			return threadID
-		}
-	}
-	for _, process := range codexProcesses {
-		cmd := exec.Command("lsof", "-p", strconv.Itoa(process.PID))
-		cmd.Env = api.envList()
-		var stdout bytes.Buffer
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				continue
-			}
-			return ""
-		}
-		if threadID := rolloutThreadIDFromOutput(stdout.String()); threadID != "" {
-			return threadID
-		}
-	}
-	return ""
-}
-
-func (api *API) PaneAIThreadID(pane Pane, processes map[int]ProcessInfo, children map[int][]int) string {
-	return api.PaneAIResume(pane, processes, children).ID
-}
-
 // Resume is the agent or c3po screen a pane should restore.
 type Resume struct {
 	ID        string
@@ -382,10 +326,11 @@ type Resume struct {
 	Screen    string
 }
 
-// PaneAIResume returns the Codex thread id or the Grok session id open in the pane.
-// grokWorkspace is the directory Grok stored that session under. grok --resume
-// only finds a session from that workspace, so restore must start there.
-func (api *API) PaneAIResume(pane Pane, processes map[int]ProcessInfo, children map[int][]int) Resume {
+// PaneAgentResume returns what the pane's agent resumes: a Codex thread, a
+// Grok session, or a c3po screen session. Workspace is the directory Grok
+// stored that session under. grok --resume only finds a session from that
+// workspace, so restore must start there.
+func (api *API) PaneAgentResume(pane Pane, processes map[int]ProcessInfo, children map[int][]int) Resume {
 	if processes == nil || children == nil {
 		processes, children = api.ProcessTree()
 	}
@@ -409,7 +354,7 @@ func (api *API) PaneAIResume(pane Pane, processes map[int]ProcessInfo, children 
 		}
 	}
 	for _, process := range paneProcs {
-		if id, screen, workspace, kind, ok := c3poResumeForProcess(process, pane.CurrentPath); ok {
+		if id, screen, workspace, kind, ok := c3poResumeForProcess(process, pane.CurrentPath, api.envList()); ok {
 			return Resume{ID: id, Workspace: workspace, Kind: kind, Screen: screen}
 		}
 	}
@@ -510,10 +455,11 @@ func (api *API) ListSessionAgentStatuses() (map[string]AgentStatus, error) {
 	processes, children := api.ProcessTree()
 	statuses := map[string]AgentStatus{}
 	now := time.Now()
-	claudeHolds := readClaudeActivityHolds()
+	holdPath := claudeActivityPath(api.Env)
+	claudeHolds := readClaudeActivityHolds(holdPath)
 	claudeHoldsDirty := false
 	for _, pane := range panes {
-		if api.PaneAIProcessPID(pane, processes, children) == 0 {
+		if api.PaneAgentProcessPID(pane, processes, children) == 0 {
 			continue
 		}
 		current := statuses[pane.SessionName]
@@ -547,7 +493,7 @@ func (api *API) ListSessionAgentStatuses() (map[string]AgentStatus, error) {
 	}
 	if claudeHoldsDirty {
 		pruneClaudeActivityHolds(claudeHolds, now)
-		writeClaudeActivityHolds(claudeHolds)
+		writeClaudeActivityHolds(holdPath, claudeHolds)
 	}
 	return statuses, nil
 }
@@ -730,41 +676,79 @@ func ManagedTmuxConfigPath(api *API) string {
 	return filepath.Join(home, ".config", "tmux", "tmux.conf")
 }
 
-func ManagedIndexKey(configPath string) string {
+// earlierDefaultIndexKey is the picker key earlier installs bound when no key
+// was given. A reload clears it with the rendered config's keys, so a switch
+// to another index key leaves no stale picker binding. It stays M-i even if
+// the install default changes, because the old bindings used M-i.
+const earlierDefaultIndexKey = "M-i"
+
+// managedKeys returns the keys the rendered managed config binds or unbinds,
+// by key table, so a reload can clear what an earlier render bound. The config
+// fragments are the only list of them.
+func managedKeys(configPath string) map[string][]string {
 	paths := []string{configPath}
-	fragments, err := filepath.Glob(filepath.Join(filepath.Dir(configPath), "tmux.conf.d", "*.conf"))
-	if err == nil {
+	if fragments, err := filepath.Glob(filepath.Join(filepath.Dir(configPath), "tmux.conf.d", "*.conf")); err == nil {
 		sort.Strings(fragments)
 		paths = append(paths, fragments...)
 	}
+	keys := map[string][]string{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		for _, line := range strings.Split(string(data), "\n") {
-			if match := managedIndexBindRE.FindStringSubmatch(strings.TrimSpace(line)); len(match) == 2 {
-				return match[1]
+			if table, key, ok := boundKey(line); ok {
+				keys[table] = orderedSet(append(keys[table], key))
 			}
 		}
 	}
-	return defaultIndexKey
+	return keys
+}
+
+// boundKey returns the key table and key of a bind or unbind line. -n is the
+// root table, -T names a table, and no table flag means the prefix table.
+func boundKey(line string) (string, string, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 2 || (fields[0] != "bind" && fields[0] != "unbind") {
+		return "", "", false
+	}
+	table := "prefix"
+	rest := fields[1:]
+	for len(rest) > 1 && strings.HasPrefix(rest[0], "-") {
+		switch rest[0] {
+		case "-n":
+			table = "root"
+		case "-T":
+			table = rest[1]
+			rest = rest[1:]
+		}
+		rest = rest[1:]
+	}
+	if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
+		return "", "", false
+	}
+	key := rest[0]
+	if unquoted, err := strconv.Unquote(key); err == nil {
+		key = unquoted
+	}
+	return table, key, true
 }
 
 func ReloadManagedConfig(api *API) error {
 	configPath := ManagedTmuxConfigPath(api)
-	rootKeys := orderedSet(append([]string{ManagedIndexKey(configPath), defaultIndexKey}, managedRootKeys...))
-	for _, key := range rootKeys {
+	keys := managedKeys(configPath)
+	for _, key := range orderedSet(append(keys["root"], earlierDefaultIndexKey)) {
 		if err := api.UnbindKey(key, "", true); err != nil {
 			return err
 		}
 	}
-	for _, key := range managedPrefixKeys {
+	for _, key := range keys["prefix"] {
 		if err := api.UnbindKey(key, "", false); err != nil {
 			return err
 		}
 	}
-	for _, key := range managedCopyModeVIKeys {
+	for _, key := range keys["copy-mode-vi"] {
 		if err := api.UnbindKey(key, "copy-mode-vi", false); err != nil {
 			return err
 		}
@@ -1073,8 +1057,6 @@ type c3poActive struct {
 	CWD       string `json:"cwd"`
 }
 
-var readStartTicks = processStartTicks
-
 func isC3poBinary(process ProcessInfo) bool {
 	if process.Comm == "c3po" {
 		return true
@@ -1154,7 +1136,7 @@ func c3poTUICommand(process ProcessInfo) (string, string, bool) {
 	return screen, resume, true
 }
 
-func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, string, string, bool) {
+func c3poResumeForProcess(process ProcessInfo, paneCWD string, env []string) (string, string, string, string, bool) {
 	screen, resume, ok := c3poTUICommand(process)
 	if !ok {
 		return "", "", "", "", false
@@ -1163,7 +1145,8 @@ func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, 
 	if isR2D2Binary(process) {
 		kind = "r2d2"
 	}
-	if row, found := matchC3poActive(readC3poActiveRows(), process.PID); found {
+	ticks, known := processStartTicks(process.PID)
+	if row, found := matchC3poActive(readC3poActiveRows(env), process.PID, ticks, known); found {
 		workspace := row.CWD
 		if workspace == "" {
 			workspace = paneCWD
@@ -1179,8 +1162,7 @@ func c3poResumeForProcess(process ProcessInfo, paneCWD string) (string, string, 
 	return "", "", "", "", false
 }
 
-func matchC3poActive(rows []c3poActive, pid int) (c3poActive, bool) {
-	ticks, known := readStartTicks(pid)
+func matchC3poActive(rows []c3poActive, pid int, ticks int64, known bool) (c3poActive, bool) {
 	for _, row := range rows {
 		if row.PID != pid || row.SessionID == "" {
 			continue
@@ -1193,8 +1175,9 @@ func matchC3poActive(rows []c3poActive, pid int) (c3poActive, bool) {
 	return c3poActive{}, false
 }
 
-func readC3poActiveRows() []c3poActive {
+func readC3poActiveRows(env []string) []c3poActive {
 	cmd := exec.Command("c3po", "__session", "active")
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
@@ -1545,17 +1528,22 @@ func claudeHoldTime(until int64) time.Time {
 	return time.Unix(until, 0)
 }
 
-func claudeActivityPath() string {
-	dir := os.Getenv("XDG_RUNTIME_DIR")
+// The claude activity holds file caches, per pane id, the moment until which
+// a claude pane still counts as working after its spinner was last seen
+// (claudeWorkingHold). A hold is dropped when the pane shows claude finished
+// or the moment passes, and expired holds are pruned whenever the file is
+// written.
+func claudeActivityPath(env map[string]string) string {
+	dir := env["XDG_RUNTIME_DIR"]
 	if dir == "" {
 		dir = os.TempDir()
 	}
 	return filepath.Join(dir, "tesseract-claude-activity")
 }
 
-func readClaudeActivityHolds() map[string]int64 {
+func readClaudeActivityHolds(path string) map[string]int64 {
 	holds := map[string]int64{}
-	data, err := os.ReadFile(claudeActivityPath())
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return holds
 	}
@@ -1581,7 +1569,7 @@ func pruneClaudeActivityHolds(holds map[string]int64, now time.Time) {
 	}
 }
 
-func writeClaudeActivityHolds(holds map[string]int64) {
+func writeClaudeActivityHolds(path string, holds map[string]int64) {
 	var builder strings.Builder
 	ids := make([]string, 0, len(holds))
 	for id := range holds {
@@ -1591,7 +1579,6 @@ func writeClaudeActivityHolds(holds map[string]int64) {
 	for _, id := range ids {
 		fmt.Fprintf(&builder, "%s %d\n", id, holds[id])
 	}
-	path := claudeActivityPath()
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(builder.String()), 0o600); err != nil {
 		return

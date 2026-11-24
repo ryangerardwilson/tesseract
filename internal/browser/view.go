@@ -1,10 +1,8 @@
-package l3
+package browser
 
 import (
 	"strings"
 
-	"github.com/ryangerardwilson/tesseract/internal/components/l1"
-	"github.com/ryangerardwilson/tesseract/internal/components/l2"
 	"github.com/ryangerardwilson/tesseract/internal/tmux"
 )
 
@@ -20,7 +18,7 @@ type BrowserState struct {
 	Help     bool
 }
 
-func RenderBrowser(theme l1.Theme, state BrowserState) string {
+func RenderBrowser(theme Theme, state BrowserState) string {
 	width := state.Width
 	if width < 40 {
 		width = 40
@@ -32,7 +30,7 @@ func RenderBrowser(theme l1.Theme, state BrowserState) string {
 	if state.Mode != "" && state.Mode != "select" {
 		lines = append(lines, theme.Prompt.Render(promptLabel(state.Mode)+" "+state.Input))
 	}
-	lines = append(lines, l2.RenderSessionList(theme, state.Sessions, state.Selected, width))
+	lines = append(lines, RenderSessionList(theme, state.Sessions, state.Selected, width))
 	if state.Error != "" {
 		lines = append(lines, theme.Error.Render(state.Error))
 	} else if state.Status != "" {
@@ -43,7 +41,7 @@ func RenderBrowser(theme l1.Theme, state BrowserState) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderHelp(theme l1.Theme, width int) string {
+func renderHelp(theme Theme, width int) string {
 	lines := []string{
 		theme.HelpTitle.Render("tesseract help"),
 		"",

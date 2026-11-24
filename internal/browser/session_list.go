@@ -1,14 +1,13 @@
-package l2
+package browser
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/ryangerardwilson/tesseract/internal/components/l1"
 	"github.com/ryangerardwilson/tesseract/internal/tmux"
 )
 
-func RenderSessionList(theme l1.Theme, sessions []tmux.Session, selected int, width int) string {
+func RenderSessionList(theme Theme, sessions []tmux.Session, selected int, width int) string {
 	if width < 20 {
 		width = 20
 	}

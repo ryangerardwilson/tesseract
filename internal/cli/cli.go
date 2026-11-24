@@ -321,7 +321,7 @@ func upgradeApp(api *tmux.API, errOut io.Writer) int {
 }
 
 func appDir(api *tmux.API) string {
-	if value := os.Getenv("TM_APP_DIR"); value != "" {
+	if value := api.Env["TM_APP_DIR"]; value != "" {
 		return value
 	}
 	return assets.DefaultAppDir(api.Env["HOME"])

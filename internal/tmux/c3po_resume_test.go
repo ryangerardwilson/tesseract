@@ -47,9 +47,6 @@ func TestC3poTUICommand(t *testing.T) {
 }
 
 func TestMatchC3poActive(t *testing.T) {
-	orig := readStartTicks
-	t.Cleanup(func() { readStartTicks = orig })
-	readStartTicks = func(int) (int64, bool) { return 99, true }
 	rows := []c3poActive{{
 		SessionID: "01a17622-5fd9-7bc2-81ff-3e200a8c16b7",
 		PID:       7,
@@ -57,12 +54,12 @@ func TestMatchC3poActive(t *testing.T) {
 		Screen:    "o",
 		CWD:       "/work",
 	}}
-	got, ok := matchC3poActive(rows, 7)
+	got, ok := matchC3poActive(rows, 7, 99, true)
 	if !ok || got.Screen != "o" || got.CWD != "/work" {
 		t.Fatalf("%+v %v", got, ok)
 	}
 	rows[0].PIDStart = 1
-	if _, ok := matchC3poActive(rows, 7); ok {
+	if _, ok := matchC3poActive(rows, 7, 99, true); ok {
 		t.Fatal("stale pid start matched")
 	}
 }

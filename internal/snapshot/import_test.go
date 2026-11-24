@@ -26,7 +26,7 @@ func TestLegacySnapshotImportsOnce(t *testing.T) {
 						Layout:             "even-horizontal, 'x'",
 						ActivePanePosition: 1,
 						Panes: []PaneSnapshot{
-							{CWD: "/tmp", Kind: "codex", CodexThreadID: "thread", CodexProfile: "zai"},
+							{CWD: "/tmp", Kind: "codex", ResumeID: "thread", CodexProfile: "zai"},
 							{CWD: "/work", Kind: "shell"},
 						},
 					},

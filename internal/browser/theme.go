@@ -1,4 +1,4 @@
-package l1
+package browser
 
 import "github.com/charmbracelet/lipgloss"
 

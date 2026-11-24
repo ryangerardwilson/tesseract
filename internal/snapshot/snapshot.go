@@ -15,12 +15,15 @@ const (
 	FileName        = "session_snapshot.json"
 )
 
+// PaneSnapshot is one saved pane. ResumeID is the id its agent resumes: a
+// codex thread, a grok session, or a c3po session. Snapshot files from before
+// the database call it codex_thread_id.
 type PaneSnapshot struct {
-	CWD           string `json:"cwd"`
-	Kind          string `json:"kind"`
-	CodexThreadID string `json:"codex_thread_id,omitempty"`
-	CodexProfile  string `json:"codex_profile,omitempty"`
-	Screen        string `json:"screen,omitempty"`
+	CWD          string `json:"cwd"`
+	Kind         string `json:"kind"`
+	ResumeID     string `json:"codex_thread_id,omitempty"`
+	CodexProfile string `json:"codex_profile,omitempty"`
+	Screen       string `json:"screen,omitempty"`
 }
 
 type WindowSnapshot struct {
@@ -33,8 +36,6 @@ type WindowSnapshot struct {
 type SessionSnapshot struct {
 	Name                 string           `json:"name"`
 	LastAccessed         int64            `json:"last_accessed,omitempty"`
-	AgentSettledAt       int64            `json:"agent_settled_at,omitempty"`
-	AgentSeenAt          int64            `json:"agent_seen_at,omitempty"`
 	ActiveWindowPosition int              `json:"active_window_position"`
 	Windows              []WindowSnapshot `json:"windows"`
 }
@@ -124,10 +125,6 @@ func WriteRuntimeSnapshotIfNonempty(api *tmux.API, sessionOrder []string) (*Save
 	return WriteRuntimeSnapshot(api, sessionOrder)
 }
 
-func CaptureRuntimeSnapshot(api *tmux.API, sessionOrder []string) (*SavedSnapshot, error) {
-	return captureRuntimeSnapshot(api, sessionOrder, nil, nil, time.Now().Unix())
-}
-
 func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[string]int64, saved *SavedSnapshot, capturedAt int64) (*SavedSnapshot, error) {
 	sessions, err := liveNonIndexSessions(api)
 	if err != nil {
@@ -161,8 +158,8 @@ func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[s
 				if pane.Active {
 					activePanePosition = panePosition
 				}
-				resume := api.PaneAIResume(pane, processes, children)
-				snap := paneSnapshotForThread(api, pane, resume.ID, processes, children)
+				resume := api.PaneAgentResume(pane, processes, children)
+				snap := paneSnapshotForResume(api, pane, resume.ID, processes, children)
 				if (resume.Kind == "c3po" || resume.Kind == "r2d2") && resume.ID != "" {
 					snap.Kind = resume.Kind
 					snap.Screen = resume.Screen
@@ -200,10 +197,10 @@ func captureRuntimeSnapshot(api *tmux.API, sessionOrder []string, previous map[s
 	}, nil
 }
 
-func paneSnapshotForThread(api *tmux.API, pane tmux.Pane, threadID string, processes map[int]tmux.ProcessInfo, children map[int][]int) PaneSnapshot {
+func paneSnapshotForResume(api *tmux.API, pane tmux.Pane, resumeID string, processes map[int]tmux.ProcessInfo, children map[int][]int) PaneSnapshot {
 	kind := "shell"
 	codexProfile := ""
-	if threadID != "" {
+	if resumeID != "" {
 		if api.PaneCodexProcessPID(pane, processes, children) > 0 {
 			kind = "codex"
 			codexProfile = api.PaneCodexProfile(pane, processes, children)
@@ -216,10 +213,10 @@ func paneSnapshotForThread(api *tmux.API, pane tmux.Pane, threadID string, proce
 		cwd = api.DefaultStartDirectory()
 	}
 	return PaneSnapshot{
-		CWD:           cwd,
-		Kind:          kind,
-		CodexThreadID: threadID,
-		CodexProfile:  codexProfile,
+		CWD:          cwd,
+		Kind:         kind,
+		ResumeID:     resumeID,
+		CodexProfile: codexProfile,
 	}
 }
 
@@ -372,7 +369,7 @@ func splitWindowWithShellFallback(api *tmux.API, target, startDirectory, command
 }
 
 func restoreCommand(pane PaneSnapshot) string {
-	if pane.CodexThreadID == "" {
+	if pane.ResumeID == "" {
 		return ""
 	}
 	if pane.Kind == "codex" {
@@ -380,24 +377,28 @@ func restoreCommand(pane PaneSnapshot) string {
 		if pane.CodexProfile != "" {
 			command += " --profile " + tmux.ShellQuote(pane.CodexProfile)
 		}
-		command += " resume " + tmux.ShellQuote(pane.CodexThreadID)
+		command += " resume " + tmux.ShellQuote(pane.ResumeID)
 		return commandWithShellFallback(command)
 	}
 	if pane.Kind == "grok" {
 		// Grok supports --resume <session-id> (see ~/.grok/docs/user-guide/17-sessions.md)
-		return commandWithShellFallback("grok --resume " + tmux.ShellQuote(pane.CodexThreadID))
+		return commandWithShellFallback("grok --resume " + tmux.ShellQuote(pane.ResumeID))
 	}
 	if pane.Kind == "c3po" || pane.Kind == "r2d2" {
-		if pane.Screen == "" || pane.CodexThreadID == "" {
+		if pane.Screen == "" || pane.ResumeID == "" {
 			return ""
 		}
-		return commandWithShellFallback("r2d2 " + tmux.ShellQuote(pane.Screen) + " --resume " + tmux.ShellQuote(pane.CodexThreadID))
+		return commandWithShellFallback("r2d2 " + tmux.ShellQuote(pane.Screen) + " --resume " + tmux.ShellQuote(pane.ResumeID))
 	}
 	return ""
 }
 
+// tmux runs a pane command with default-shell -c, which is not a login shell,
+// and with the PATH of the client that restored it. The omarchy bar restores
+// with a bare PATH. A login shell reads the profile that puts mise and
+// ~/.local/bin tools on PATH, as a new tmux pane does.
 func commandWithShellFallback(command string) string {
-	return command + `; exec "${SHELL:-/bin/sh}"`
+	return `"${SHELL:-/bin/sh}" -lc ` + tmux.ShellQuote(command) + `; exec "${SHELL:-/bin/sh}"`
 }
 
 func liveNonIndexSessions(api *tmux.API) ([]tmux.Session, error) {

@@ -3,12 +3,13 @@ package tmux
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestManagedIndexKeyReadsFragmentConfig(t *testing.T) {
+func TestManagedKeysComeFromTheRenderedConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tmux.conf")
 	fragmentDir := filepath.Join(dir, "tmux.conf.d")
@@ -18,12 +19,24 @@ func TestManagedIndexKeyReadsFragmentConfig(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("source-file ~/.config/tmux/tmux.conf.d/*.conf\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(fragmentDir, "20-managed-picker.conf"), []byte(`bind -n "F8" run-shell "TMUX_CLIENT_TTY='#{client_tty}' \"/tmp/tesseract\" open picker >/dev/null 2>&1"`+"\n"), 0o644); err != nil {
+	fragment := `unbind -n "F8"
+unbind -n "M-\\"
+bind -n "F8" run-shell "TMUX_CLIENT_TTY='#{client_tty}' \"/tmp/tesseract\" open picker >/dev/null 2>&1"
+bind -n M-Enter run-shell "true"
+bind C new-session -c "#{pane_current_path}"
+bind -T copy-mode-vi v send -X begin-selection
+`
+	if err := os.WriteFile(filepath.Join(fragmentDir, "20-managed-picker.conf"), []byte(fragment), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := ManagedIndexKey(configPath); got != "F8" {
-		t.Fatalf("ManagedIndexKey() = %q, want F8", got)
+	want := map[string][]string{
+		"root":         {"F8", `M-\`, "M-Enter"},
+		"prefix":       {"C"},
+		"copy-mode-vi": {"v"},
+	}
+	if got := managedKeys(configPath); !reflect.DeepEqual(got, want) {
+		t.Fatalf("managedKeys() = %q, want %q", got, want)
 	}
 }
 

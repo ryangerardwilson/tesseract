@@ -14,9 +14,9 @@ type AgentActivity struct {
 	Working  int
 }
 
-// agentState is the part of a session row that the list poll owns.
-// agent_was_working is the previous poll's answer, so the poll can see
-// the moment work stops. Zero timestamps are stored as NULL.
+// agentState is a saved session's session_agent row, which only this poll
+// writes. WasWorking is the previous poll's answer, so the poll can see the
+// moment work stops. Zero timestamps are stored as NULL.
 type agentState struct {
 	WasWorking bool
 	SettledAt  int64
@@ -24,13 +24,11 @@ type agentState struct {
 }
 
 type agentRow struct {
-	Name           string `json:"name"`
-	WasWorking     *int64 `json:"agent_was_working"`
-	AgentSettledAt *int64 `json:"agent_settled_at"`
-	AgentSeenAt    *int64 `json:"agent_seen_at"`
+	Name       string `json:"name"`
+	WasWorking *int64 `json:"was_working"`
+	SettledAt  *int64 `json:"settled_at"`
+	SeenAt     *int64 `json:"seen_at"`
 }
-
-const agentColumns = "agent_was_working, agent_settled_at, agent_seen_at"
 
 func nextAgentState(prev agentState, activity AgentActivity, now int64) agentState {
 	next := prev
@@ -62,17 +60,9 @@ func RecordAgentActivity(home string, activity []AgentActivity, now time.Time) (
 	if err != nil {
 		return nil, err
 	}
-	var rows []agentRow
-	if err := queryJSON(dbPath, "SELECT name, "+agentColumns+" FROM session", &rows); err != nil {
+	saved, err := readAgentStates(dbPath)
+	if err != nil {
 		return nil, err
-	}
-	saved := make(map[string]agentState, len(rows))
-	for _, row := range rows {
-		saved[row.Name] = agentState{
-			WasWorking: derefInt(row.WasWorking) != 0,
-			SettledAt:  derefInt(row.AgentSettledAt),
-			SeenAt:     derefInt(row.AgentSeenAt),
-		}
 	}
 	unseen := map[string]bool{}
 	var updates strings.Builder
@@ -96,30 +86,36 @@ func RecordAgentActivity(home string, activity []AgentActivity, now time.Time) (
 	return unseen, nil
 }
 
+// readAgentStates returns the agent state of every saved session. A session
+// the poll has not written yet has the zero state.
+func readAgentStates(dbPath string) (map[string]agentState, error) {
+	var rows []agentRow
+	if err := sqliteQueryJSON(dbPath, "SELECT s.name, a.was_working, a.settled_at, a.seen_at FROM session_snapshot AS s LEFT JOIN session_agent AS a ON a.session_id = s.id", &rows); err != nil {
+		return nil, err
+	}
+	saved := make(map[string]agentState, len(rows))
+	for _, row := range rows {
+		saved[row.Name] = agentState{
+			WasWorking: derefInt(row.WasWorking) != 0,
+			SettledAt:  derefInt(row.SettledAt),
+			SeenAt:     derefInt(row.SeenAt),
+		}
+	}
+	return saved, nil
+}
+
 func writeAgentUpdate(b *strings.Builder, name string, state agentState) {
 	wasWorking := int64(0)
 	if state.WasWorking {
 		wasWorking = 1
 	}
-	fmt.Fprintf(b, "UPDATE session SET agent_was_working = %d, agent_settled_at = %s, agent_seen_at = %s WHERE name = %s;\n",
+	fmt.Fprintf(b, "INSERT INTO session_agent(session_id, was_working, settled_at, seen_at) SELECT id, %d, %s, %s FROM session_snapshot WHERE name = %s\n"+
+		"ON CONFLICT(session_id) DO UPDATE SET was_working = excluded.was_working, settled_at = excluded.settled_at, seen_at = excluded.seen_at;\n",
 		wasWorking,
 		sqlIntOrNull(state.SettledAt),
 		sqlIntOrNull(state.SeenAt),
 		sqlString(name),
 	)
-}
-
-// A snapshot replaces every session row. These statements keep the agent
-// columns the list poll wrote, inside the same transaction, so a snapshot
-// that read the rows earlier cannot roll them back.
-func writeAgentKeep(b *strings.Builder) {
-	b.WriteString("DROP TABLE IF EXISTS temp.agent_keep;\n")
-	b.WriteString("CREATE TEMP TABLE agent_keep AS SELECT name, " + agentColumns + " FROM session;\n")
-}
-
-func writeAgentRestore(b *strings.Builder) {
-	b.WriteString("UPDATE session SET agent_was_working = k.agent_was_working, agent_settled_at = k.agent_settled_at, agent_seen_at = k.agent_seen_at FROM agent_keep AS k WHERE k.name = session.name;\n")
-	b.WriteString("DROP TABLE temp.agent_keep;\n")
 }
 
 func derefInt(value *int64) int64 {

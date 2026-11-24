@@ -21,6 +21,9 @@ type PickerResult struct {
 	Name   string
 }
 
+// SessionPayloadItem is one session as the picker's QML and the omarchy
+// bar's jq read it: the tmux session with its agent counts flattened into
+// agent_* keys, and agent_unseen as 0 or 1 because both read numbers.
 type SessionPayloadItem struct {
 	Name         string `json:"name"`
 	Attached     int    `json:"attached"`
@@ -32,42 +35,35 @@ type SessionPayloadItem struct {
 	AgentUnseen  int    `json:"agent_unseen"`
 }
 
+// SelectPayload answers quickshell select with the session it switched to.
+type SelectPayload struct {
+	Selected string `json:"selected"`
+}
+
 type SessionPayload struct {
 	Sessions  []SessionPayloadItem `json:"sessions"`
 	Preferred string               `json:"preferred,omitempty"`
 }
 
-func APIPayload(api *tmux.API, argv []string) (map[string]any, error) {
+func APIPayload(api *tmux.API, argv []string) (any, error) {
 	if len(argv) == 1 && argv[0] == "list" {
 		if _, err := snapshot.RestoreSavedSessionsIfNeeded(api); err != nil {
 			return nil, err
 		}
-		payload, err := Payload(api, "")
-		if err != nil {
-			return nil, err
-		}
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-		var out map[string]any
-		if err := json.Unmarshal(data, &out); err != nil {
-			return nil, err
-		}
-		return out, nil
+		return Payload(api, "")
 	}
 	if len(argv) == 2 && argv[0] == "select" {
 		selected, err := DesktopSelectSession(api, argv[1])
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"selected": selected}, nil
+		return SelectPayload{Selected: selected}, nil
 	}
 	return nil, fmt.Errorf(Usage)
 }
 
 func Payload(api *tmux.API, preferred string) (*SessionPayload, error) {
-	sessions, err := visibleSessions(api)
+	sessions, err := snapshot.VisibleSessions(api)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +96,7 @@ func payloadItem(session tmux.Session, status tmux.AgentStatus, unseen bool) Ses
 		AgentWorking: status.Working,
 		AgentIdle:    status.Idle,
 	}
-	if unseen && status.Total > 0 && status.Working == 0 {
+	if unseen {
 		item.AgentUnseen = 1
 	}
 	return item
@@ -170,7 +166,7 @@ func DeleteSessionPayload(api *tmux.API, name string) (*SessionPayload, error) {
 	if !api.HasSession(sessionName) {
 		return nil, fmt.Errorf("No such session: %s", sessionName)
 	}
-	previousSessions, err := visibleSessions(api)
+	previousSessions, err := snapshot.VisibleSessions(api)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +177,7 @@ func DeleteSessionPayload(api *tmux.API, name string) (*SessionPayload, error) {
 	if _, err := tmux.KillSessionSafely(api, sessionName); err != nil {
 		return nil, err
 	}
-	remainingSessions, err := visibleSessions(api)
+	remainingSessions, err := snapshot.VisibleSessions(api)
 	if err != nil {
 		return nil, err
 	}
@@ -321,20 +317,6 @@ func ValidateSessionName(name string) (string, error) {
 		return "", fmt.Errorf("Session name cannot contain : or control characters")
 	}
 	return sessionName, nil
-}
-
-func visibleSessions(api *tmux.API) ([]tmux.Session, error) {
-	sessions, err := api.ListSessions(true)
-	if err != nil {
-		return nil, err
-	}
-	visible := make([]tmux.Session, 0, len(sessions))
-	for _, session := range sessions {
-		if session.Name != tmux.IndexSessionName {
-			visible = append(visible, session)
-		}
-	}
-	return snapshot.SessionsInRecencyOrder(api.Env["HOME"], visible), nil
 }
 
 func preferredAfterRemoval(previousOrder []string, removedName string, remainingSessions []tmux.Session) string {

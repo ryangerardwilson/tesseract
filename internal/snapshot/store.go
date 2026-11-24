@@ -13,68 +13,28 @@ const databaseName = "tesseract"
 
 const legacyDatabaseName = "tm"
 
-const importedSnapshotKey = "imported_snapshot"
-
-const metaModel = "model meta\n" +
-	"  id integer primary key\n" +
-	"  key text not null\n" +
-	"  value text\n"
-
-const sessionModel = "model session\n" +
-	"  id integer primary key\n" +
-	"  name text not null\n" +
-	"  last_accessed integer\n" +
-	"  agent_was_working integer\n" +
-	"  agent_settled_at integer\n" +
-	"  agent_seen_at integer\n" +
-	"  active_window_position integer not null\n" +
-	"  position integer not null\n"
-
-const windowModel = "model window\n" +
-	"  id integer primary key\n" +
-	"  session_name text not null\n" +
-	"  position integer not null\n" +
-	"  name text not null\n" +
-	"  layout text not null\n" +
-	"  active_pane_position integer not null\n"
-
-const paneModel = "model pane\n" +
-	"  id integer primary key\n" +
-	"  session_name text not null\n" +
-	"  window_position integer not null\n" +
-	"  position integer not null\n" +
-	"  cwd text not null\n" +
-	"  kind text not null\n" +
-	"  codex_thread_id text\n" +
-	"  codex_profile text\n" +
-	"  screen text\n"
-
 type sessionRow struct {
+	ID                   int64  `json:"id"`
 	Name                 string `json:"name"`
 	LastAccessed         *int64 `json:"last_accessed"`
-	AgentSettledAt       *int64 `json:"agent_settled_at"`
-	AgentSeenAt          *int64 `json:"agent_seen_at"`
 	ActiveWindowPosition int    `json:"active_window_position"`
-	Position             int    `json:"position"`
 }
 
 type windowRow struct {
-	SessionName        string `json:"session_name"`
-	Position           int    `json:"position"`
+	ID                 int64  `json:"id"`
+	SessionID          int64  `json:"session_id"`
 	Name               string `json:"name"`
 	Layout             string `json:"layout"`
 	ActivePanePosition int    `json:"active_pane_position"`
 }
 
 type paneRow struct {
-	SessionName    string  `json:"session_name"`
-	WindowPosition int     `json:"window_position"`
-	Position       int     `json:"position"`
-	CWD            string  `json:"cwd"`
-	Kind           string  `json:"kind"`
-	CodexThreadID  *string `json:"codex_thread_id"`
-	CodexProfile   *string `json:"codex_profile"`
-	Screen         *string `json:"screen"`
+	WindowID     int64   `json:"window_id"`
+	CWD          string  `json:"cwd"`
+	Kind         string  `json:"kind"`
+	ResumeID     *string `json:"resume_id"`
+	CodexProfile *string `json:"codex_profile"`
+	Screen       *string `json:"screen"`
 }
 
 func openDB(home string) (string, error) {
@@ -100,7 +60,7 @@ func migrateLegacyDatabase(path string) error {
 }
 
 func importLegacySnapshot(home, dbPath string) error {
-	imported, err := metaHas(dbPath, importedSnapshotKey)
+	imported, err := snapshotSaved(dbPath)
 	if err != nil {
 		return fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
@@ -137,43 +97,46 @@ func importLegacySnapshot(home, dbPath string) error {
 	return nil
 }
 
+// replaceSnapshot saves snapshot as the one saved snapshot. A session that
+// stays saved keeps its row, so the agent state RecordAgentActivity keeps for
+// it stays too. Windows and panes are written again.
 func replaceSnapshot(dbPath string, snapshot *SavedSnapshot) error {
 	var b strings.Builder
 	b.WriteString("BEGIN IMMEDIATE;\n")
-	writeAgentKeep(&b)
-	b.WriteString("DELETE FROM pane;\nDELETE FROM \"window\";\nDELETE FROM session;\nDELETE FROM meta;\n")
+	fmt.Fprintf(&b, "INSERT INTO saved_snapshot(id, version, captured_at) VALUES (1, %d, %d)\n"+
+		"ON CONFLICT(id) DO UPDATE SET version = excluded.version, captured_at = excluded.captured_at;\n",
+		snapshot.Version, snapshot.CapturedAt)
+	b.WriteString("DELETE FROM window_snapshot;\n")
 	writeSessionRows(&b, snapshot)
-	writeAgentRestore(&b)
 	writeWindowRows(&b, snapshot)
 	writePaneRows(&b, snapshot)
-	fmt.Fprintf(&b, "INSERT INTO meta(key, value) VALUES (%s, %s), (%s, %s), (%s, '1');\n",
-		sqlString("version"), sqlString(strconv.Itoa(snapshot.Version)),
-		sqlString("captured_at"), sqlString(strconv.FormatInt(snapshot.CapturedAt, 10)),
-		sqlString(importedSnapshotKey),
-	)
 	b.WriteString("COMMIT;\n")
 	return execSQL(dbPath, b.String())
 }
 
 func writeSessionRows(b *strings.Builder, snapshot *SavedSnapshot) {
+	names := make([]string, 0, len(snapshot.Sessions))
+	for _, session := range snapshot.Sessions {
+		names = append(names, sqlString(session.Name))
+	}
+	fmt.Fprintf(b, "DELETE FROM session_snapshot WHERE name NOT IN (%s);\n", strings.Join(names, ", "))
 	if len(snapshot.Sessions) == 0 {
 		return
 	}
-	b.WriteString("INSERT INTO session(name, last_accessed, agent_settled_at, agent_seen_at, active_window_position, position) VALUES\n")
+	b.WriteString("INSERT INTO session_snapshot(name, position, active_window_position, last_accessed) VALUES\n")
 	for position, session := range snapshot.Sessions {
 		if position > 0 {
 			b.WriteString(",\n")
 		}
-		fmt.Fprintf(b, "(%s, %s, %s, %s, %d, %d)",
+		fmt.Fprintf(b, "(%s, %d, %d, %s)",
 			sqlString(session.Name),
-			sqlIntOrNull(session.LastAccessed),
-			sqlIntOrNull(session.AgentSettledAt),
-			sqlIntOrNull(session.AgentSeenAt),
-			session.ActiveWindowPosition,
 			position,
+			session.ActiveWindowPosition,
+			sqlIntOrNull(session.LastAccessed),
 		)
 	}
-	b.WriteString(";\n")
+	b.WriteString("\nON CONFLICT(name) DO UPDATE SET position = excluded.position, " +
+		"active_window_position = excluded.active_window_position, last_accessed = excluded.last_accessed;\n")
 }
 
 func writeWindowRows(b *strings.Builder, snapshot *SavedSnapshot) {
@@ -181,12 +144,12 @@ func writeWindowRows(b *strings.Builder, snapshot *SavedSnapshot) {
 	for _, session := range snapshot.Sessions {
 		for position, window := range session.Windows {
 			if first {
-				b.WriteString("INSERT INTO \"window\"(session_name, position, name, layout, active_pane_position) VALUES\n")
+				b.WriteString("INSERT INTO window_snapshot(session_id, position, name, layout, active_pane_position) VALUES\n")
 				first = false
 			} else {
 				b.WriteString(",\n")
 			}
-			fmt.Fprintf(b, "(%s, %d, %s, %s, %d)",
+			fmt.Fprintf(b, "((SELECT id FROM session_snapshot WHERE name = %s), %d, %s, %s, %d)",
 				sqlString(session.Name),
 				position,
 				sqlString(window.Name),
@@ -206,18 +169,17 @@ func writePaneRows(b *strings.Builder, snapshot *SavedSnapshot) {
 		for windowPosition, window := range session.Windows {
 			for position, pane := range window.Panes {
 				if first {
-					b.WriteString("INSERT INTO pane(session_name, window_position, position, cwd, kind, codex_thread_id, codex_profile, screen) VALUES\n")
+					b.WriteString("INSERT INTO pane_snapshot(window_id, position, cwd, kind, resume_id, codex_profile, screen) VALUES\n")
 					first = false
 				} else {
 					b.WriteString(",\n")
 				}
-				fmt.Fprintf(b, "(%s, %d, %d, %s, %s, %s, %s, %s)",
-					sqlString(session.Name),
-					windowPosition,
+				fmt.Fprintf(b, "(%s, %d, %s, %s, %s, %s, %s)",
+					windowIDSQL(session.Name, windowPosition),
 					position,
 					sqlString(pane.CWD),
 					sqlString(pane.Kind),
-					sqlTextOrNull(pane.CodexThreadID),
+					sqlTextOrNull(pane.ResumeID),
 					sqlTextOrNull(pane.CodexProfile),
 					sqlTextOrNull(pane.Screen),
 				)
@@ -227,6 +189,11 @@ func writePaneRows(b *strings.Builder, snapshot *SavedSnapshot) {
 	if !first {
 		b.WriteString(";\n")
 	}
+}
+
+func windowIDSQL(sessionName string, position int) string {
+	return fmt.Sprintf("(SELECT w.id FROM window_snapshot AS w JOIN session_snapshot AS s ON s.id = w.session_id WHERE s.name = %s AND w.position = %d)",
+		sqlString(sessionName), position)
 }
 
 func readSavedSnapshot(dbPath string) (*SavedSnapshot, error) {
@@ -256,96 +223,60 @@ func readSavedSnapshot(dbPath string) (*SavedSnapshot, error) {
 
 func readHeader(dbPath string) (int, int64, bool, error) {
 	var rows []struct {
-		Key   string  `json:"key"`
-		Value *string `json:"value"`
+		Version    int   `json:"version"`
+		CapturedAt int64 `json:"captured_at"`
 	}
-	if err := queryJSON(dbPath, "SELECT key, value FROM meta WHERE key IN ('version', 'captured_at')", &rows); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT version, captured_at FROM saved_snapshot WHERE id = 1", &rows); err != nil {
 		return 0, 0, false, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
-	var versionText, capturedText string
-	hasVersion := false
-	for _, row := range rows {
-		if row.Value == nil {
-			continue
-		}
-		switch row.Key {
-		case "version":
-			versionText = *row.Value
-			hasVersion = true
-		case "captured_at":
-			capturedText = *row.Value
-		}
-	}
-	if !hasVersion {
+	if len(rows) == 0 {
 		return 0, 0, false, nil
 	}
-	version, err := strconv.Atoi(versionText)
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("Unable to read saved sessions: unsupported snapshot version %s", versionText)
-	}
-	var capturedAt int64
-	if capturedText != "" {
-		capturedAt, err = strconv.ParseInt(capturedText, 10, 64)
-		if err != nil {
-			return 0, 0, false, fmt.Errorf("Unable to read saved sessions: %w", err)
-		}
-	}
-	return version, capturedAt, true, nil
+	return rows[0].Version, rows[0].CapturedAt, true, nil
 }
 
 func readSessions(dbPath string) ([]SessionSnapshot, error) {
 	var sessions []sessionRow
-	if err := queryJSON(dbPath, "SELECT name, last_accessed, agent_settled_at, agent_seen_at, active_window_position, position FROM session ORDER BY position, id", &sessions); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT id, name, last_accessed, active_window_position FROM session_snapshot ORDER BY position, id", &sessions); err != nil {
 		return nil, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
 	var windows []windowRow
-	if err := queryJSON(dbPath, "SELECT session_name, position, name, layout, active_pane_position FROM \"window\" ORDER BY session_name, position, id", &windows); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT id, session_id, name, layout, active_pane_position FROM window_snapshot ORDER BY session_id, position", &windows); err != nil {
 		return nil, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
 	var panes []paneRow
-	if err := queryJSON(dbPath, "SELECT session_name, window_position, position, cwd, kind, codex_thread_id, codex_profile, screen FROM pane ORDER BY session_name, window_position, position, id", &panes); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT window_id, cwd, kind, resume_id, codex_profile, screen FROM pane_snapshot ORDER BY window_id, position", &panes); err != nil {
 		return nil, fmt.Errorf("Unable to read saved sessions: %w", err)
 	}
-	panesByWindow := map[string][]PaneSnapshot{}
+	panesByWindow := map[int64][]PaneSnapshot{}
 	for _, row := range panes {
-		key := windowKey(row.SessionName, row.WindowPosition)
-		panesByWindow[key] = append(panesByWindow[key], PaneSnapshot{
-			CWD:           row.CWD,
-			Kind:          row.Kind,
-			CodexThreadID: deref(row.CodexThreadID),
-			CodexProfile:  deref(row.CodexProfile),
-			Screen:        deref(row.Screen),
+		panesByWindow[row.WindowID] = append(panesByWindow[row.WindowID], PaneSnapshot{
+			CWD:          row.CWD,
+			Kind:         row.Kind,
+			ResumeID:     deref(row.ResumeID),
+			CodexProfile: deref(row.CodexProfile),
+			Screen:       deref(row.Screen),
 		})
 	}
-	windowsBySession := map[string][]WindowSnapshot{}
+	windowsBySession := map[int64][]WindowSnapshot{}
 	for _, row := range windows {
-		windowsBySession[row.SessionName] = append(windowsBySession[row.SessionName], WindowSnapshot{
+		windowsBySession[row.SessionID] = append(windowsBySession[row.SessionID], WindowSnapshot{
 			Name:               row.Name,
 			Layout:             row.Layout,
 			ActivePanePosition: row.ActivePanePosition,
-			Panes:              panesByWindow[windowKey(row.SessionName, row.Position)],
+			Panes:              panesByWindow[row.ID],
 		})
 	}
 	out := make([]SessionSnapshot, 0, len(sessions))
 	for _, row := range sessions {
-		lastAccessed := int64(0)
-		if row.LastAccessed != nil {
-			lastAccessed = *row.LastAccessed
-		}
 		out = append(out, SessionSnapshot{
 			Name:                 row.Name,
-			LastAccessed:         lastAccessed,
-			AgentSettledAt:       derefInt(row.AgentSettledAt),
-			AgentSeenAt:          derefInt(row.AgentSeenAt),
+			LastAccessed:         derefInt(row.LastAccessed),
 			ActiveWindowPosition: row.ActiveWindowPosition,
-			Windows:              windowsBySession[row.Name],
+			Windows:              windowsBySession[row.ID],
 		})
 	}
 	return out, nil
-}
-
-func windowKey(sessionName string, position int) string {
-	return sessionName + "\x00" + strconv.Itoa(position)
 }
 
 func deref(value *string) string {
@@ -359,7 +290,7 @@ func sessionCount(dbPath string) (int, error) {
 	var rows []struct {
 		N int `json:"n"`
 	}
-	if err := queryJSON(dbPath, "SELECT COUNT(*) AS n FROM session", &rows); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT COUNT(*) AS n FROM session_snapshot", &rows); err != nil {
 		return 0, err
 	}
 	if len(rows) == 0 {
@@ -368,25 +299,22 @@ func sessionCount(dbPath string) (int, error) {
 	return rows[0].N, nil
 }
 
-func metaHas(dbPath, key string) (bool, error) {
+// snapshotSaved reports whether any snapshot, captured or imported, was saved.
+func snapshotSaved(dbPath string) (bool, error) {
 	var rows []struct {
 		N int `json:"n"`
 	}
-	if err := queryJSON(dbPath, "SELECT COUNT(*) AS n FROM meta WHERE key = "+sqlString(key), &rows); err != nil {
+	if err := sqliteQueryJSON(dbPath, "SELECT COUNT(*) AS n FROM saved_snapshot", &rows); err != nil {
 		return false, err
 	}
-	if len(rows) == 0 {
-		return false, nil
-	}
-	return rows[0].N > 0, nil
+	return len(rows) > 0 && rows[0].N > 0, nil
 }
 
 func ensure(dbPath string) error {
-	return prepareAppDB(dbPath, databaseName, ormText())
-}
-
-func ormText() string {
-	return metaModel + "\n" + sessionModel + "\n" + windowModel + "\n" + paneModel
+	if err := prepareAppDB(dbPath, databaseName, ormText()); err != nil {
+		return err
+	}
+	return linkTablesByID(dbPath)
 }
 
 func sqlIntOrNull(value int64) string {
@@ -405,10 +333,6 @@ func sqlTextOrNull(value string) string {
 
 func sqlString(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
-}
-
-func queryJSON(dbPath, sql string, dest any) error {
-	return sqliteQueryJSON(dbPath, sql, dest)
 }
 
 func execSQL(dbPath, sql string) error {
