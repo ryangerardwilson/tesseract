@@ -48,6 +48,8 @@ func key(name string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+s":
+		return tea.KeyMsg{Type: tea.KeyCtrlS}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)}
 }
@@ -182,19 +184,24 @@ func TestCtrlMChoosesTheSelectedLayer(t *testing.T) {
 	}
 }
 
+// Ctrl+M is Enter: while a window is carried it puts it down neither where it
+// was picked up nor in a new place.
 func TestCtrlMWhileCarryingDoesNothing(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "m", "h", "ctrl+m")
-
-	if quits(cmd) || m.target != nil || m.placed != nil || m.carried == nil {
-		t.Fatal("ctrl+m while carrying must do nothing")
+	for _, keys := range [][]string{{"s"}, {"s", "h"}} {
+		carrying, _ := press(newModel(testSpace()), keys...)
+		m, cmd := press(carrying, "ctrl+m")
+		if quits(cmd) || !reflect.DeepEqual(m, carrying) {
+			t.Fatalf("ctrl+m after %q must leave the carry as it was: %+v", keys, m)
+		}
 	}
 }
 
 func TestEnterOnAnEmptyWorkspaceDoesNothing(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "l", "enter")
-
-	if quits(cmd) || m.target != nil {
-		t.Fatal("enter on a workspace with no layers must do nothing")
+	for _, name := range []string{"enter", "ctrl+m"} {
+		m, cmd := press(newModel(testSpace()), "l", name)
+		if quits(cmd) || m.target != nil || m.carried != nil {
+			t.Fatalf("%s on a workspace with no apps must do nothing", name)
+		}
 	}
 }
 
@@ -218,23 +225,23 @@ func addresses(layers []space.Layer) []string {
 	return out
 }
 
-func TestFirstMPicksUpWithoutMovingAnything(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "m")
+func TestFirstSPicksUpWithoutMovingAnything(t *testing.T) {
+	m, cmd := press(newModel(testSpace()), "s")
 
 	if m.carried == nil || m.carried.window.Address != "0x3a" {
 		t.Fatalf("carried = %+v, want workspace 3's front layer 0x3a", m.carried)
 	}
 	if quits(cmd) || m.target != nil || m.placed != nil {
-		t.Fatal("the first m must not quit, focus, or move")
+		t.Fatal("the first s must not quit, focus, or move")
 	}
 	if !reflect.DeepEqual(m.shown(), testSpace().Workspaces) {
 		t.Fatalf("picking up must leave every layer in place: %+v", m.shown())
 	}
-	if view := m.View(); !strings.Contains(view, "MOVE") {
-		t.Fatalf("the footer must say MOVE while a window is carried:\n%s", view)
+	if view := m.View(); !strings.Contains(view, "SHIFT") {
+		t.Fatalf("the footer must say SHIFT while a window is carried:\n%s", view)
 	}
-	if view := newModel(testSpace()).View(); strings.Contains(view, "MOVE") {
-		t.Fatalf("the footer must not say MOVE before m:\n%s", view)
+	if view := newModel(testSpace()).View(); strings.Contains(view, "SHIFT") {
+		t.Fatalf("the footer must not say SHIFT before s:\n%s", view)
 	}
 }
 
@@ -242,7 +249,7 @@ func TestHCarriesFromTheFirstWorkspaceToTheLast(t *testing.T) {
 	current := testSpace()
 	current.Active = 1
 
-	m, cmd := press(newModel(current), "m", "h")
+	m, cmd := press(newModel(current), "s", "h")
 
 	if quits(cmd) || m.placed != nil || m.carried == nil {
 		t.Fatal("carrying must not quit or move")
@@ -275,7 +282,7 @@ func TestCarryOnZWrapsAndKeepsTheOtherLayersInOrder(t *testing.T) {
 		},
 		Active: 1,
 	}
-	m, _ := press(newModel(stack), "m")
+	m, _ := press(newModel(stack), "s")
 	for _, step := range []struct {
 		key  string
 		want []string
@@ -297,11 +304,11 @@ func TestCarryOnZWrapsAndKeepsTheOtherLayersInOrder(t *testing.T) {
 	}
 }
 
-func TestSecondMPutsTheWindowDown(t *testing.T) {
+func TestSecondSPutsTheWindowDown(t *testing.T) {
 	current := testSpace()
 	current.Active = 1
 
-	m, cmd := press(newModel(current), "m", "h", "m")
+	m, cmd := press(newModel(current), "s", "h", "s")
 
 	if !quits(cmd) {
 		t.Fatal("putting a window in a new place must close the navigator")
@@ -310,14 +317,14 @@ func TestSecondMPutsTheWindowDown(t *testing.T) {
 		t.Fatalf("placed = %+v, want 0x1a on workspace 4's front layer", m.placed)
 	}
 
-	m, _ = press(newModel(testSpace()), "m", "h", "j", "m")
+	m, _ = press(newModel(testSpace()), "s", "h", "j", "s")
 	if m.placed == nil || *m.placed != (placement{target: space.Target{Workspace: 2, Address: "0x3a"}, raise: true}) {
 		t.Fatalf("placed = %+v, want 0x3a behind workspace 2's front layer, raised after the move", m.placed)
 	}
 }
 
 func TestPuttingDownInPlaceMovesNothing(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "m", "j", "k", "m")
+	m, cmd := press(newModel(testSpace()), "s", "j", "k", "s")
 
 	if quits(cmd) || m.placed != nil || m.carried != nil {
 		t.Fatal("a window put down where it was picked up must not move or close the navigator")
@@ -325,7 +332,7 @@ func TestPuttingDownInPlaceMovesNothing(t *testing.T) {
 }
 
 func TestEscapeCancelsTheCarry(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "j", "m", "h", "j", "esc")
+	m, cmd := press(newModel(testSpace()), "j", "s", "h", "j", "esc")
 
 	if quits(cmd) || m.carried != nil || m.placed != nil || m.target != nil {
 		t.Fatal("escape while carrying must cancel without closing, moving, or focusing")
@@ -336,8 +343,8 @@ func TestEscapeCancelsTheCarry(t *testing.T) {
 	if !reflect.DeepEqual(m.shown(), testSpace().Workspaces) {
 		t.Fatalf("after cancel every layer must be back in place: %+v", m.shown())
 	}
-	if view := m.View(); strings.Contains(view, "MOVE") || !strings.Contains(view, "> org.pwmt.z") {
-		t.Fatalf("after cancel the view must mark the old place without MOVE:\n%s", view)
+	if view := m.View(); strings.Contains(view, "SHIFT") || !strings.Contains(view, "> org.pwmt.z") {
+		t.Fatalf("after cancel the view must mark the old place without SHIFT:\n%s", view)
 	}
 
 	m, cmd = press(m, "esc")
@@ -346,16 +353,31 @@ func TestEscapeCancelsTheCarry(t *testing.T) {
 	}
 }
 
-func TestMWithoutAWindowDoesNothing(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "l", "m")
+func TestSWithoutAWindowDoesNothing(t *testing.T) {
+	m, cmd := press(newModel(testSpace()), "l", "s")
 
 	if quits(cmd) || m.carried != nil {
-		t.Fatal("m on a workspace with no layers must do nothing")
+		t.Fatal("s on a workspace with no apps must do nothing")
+	}
+}
+
+// Bare m and Ctrl+S are not navigator keys. They neither pick up nor put
+// down a window, so a host may bind bare m.
+func TestBareMAndCtrlSLeaveTheNavigatorAsItWas(t *testing.T) {
+	rest := newModel(testSpace())
+	carrying, _ := press(rest, "s", "h")
+	for _, name := range []string{"m", "ctrl+s"} {
+		for _, before := range []model{rest, carrying} {
+			after, cmd := press(before, name)
+			if quits(cmd) || !reflect.DeepEqual(after, before) {
+				t.Fatalf("%s changed the navigator: %+v, want %+v", name, after, before)
+			}
+		}
 	}
 }
 
 func TestEnterWhileCarryingDoesNothing(t *testing.T) {
-	m, cmd := press(newModel(testSpace()), "m", "h", "enter")
+	m, cmd := press(newModel(testSpace()), "s", "h", "enter")
 
 	if quits(cmd) || m.target != nil || m.placed != nil || m.carried == nil {
 		t.Fatal("enter while carrying must do nothing")
@@ -402,6 +424,31 @@ func TestViewListsTheStackFrontFirst(t *testing.T) {
 		}
 		if !strings.Contains(view, step.mark) {
 			t.Fatalf("after %q the view must mark %q:\n%s", step.key, step.mark, view)
+		}
+	}
+}
+
+// The terminal navigator calls a window an app, and its footer names s
+// while a window is carried.
+func TestViewSaysAppAndShift(t *testing.T) {
+	carrying, _ := press(newModel(testSpace()), "s")
+	empty, _ := press(newModel(testSpace()), "l")
+	wide := newModel(testSpace())
+	wide.width = 100
+	for _, tc := range []struct {
+		view string
+		want string
+	}{
+		{wide.View(), "enter focus  h/l workspace  k/j app  n new  dd close  q quit"},
+		{newModel(testSpace()).View(), "enter focus  h/l workspace  k/j app\nn new  dd close  q quit"},
+		{carrying.View(), "SHIFT  h/l k/j carry  s put down  q cancel"},
+		{empty.View(), "No apps"},
+	} {
+		if !strings.Contains(tc.view, tc.want) {
+			t.Fatalf("view missing %q:\n%s", tc.want, tc.view)
+		}
+		if strings.Contains(strings.ToLower(tc.view), "layer") || strings.Contains(tc.view, "MOVE") {
+			t.Fatalf("the view must say app and SHIFT, not layer or MOVE:\n%s", tc.view)
 		}
 	}
 }
@@ -480,10 +527,10 @@ func TestNavigatorFocusesOnlyAfterEnter(t *testing.T) {
 	}
 }
 
-func TestNavigatorFirstMAndCancelDispatchNothing(t *testing.T) {
+func TestNavigatorFirstSAndCancelDispatchNothing(t *testing.T) {
 	fake := &fakeHyprctl{}
 
-	if err := navigateWith(t, fake, "mhjqq"); err != nil {
+	if err := navigateWith(t, fake, "shjqq"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -494,11 +541,11 @@ func TestNavigatorFirstMAndCancelDispatchNothing(t *testing.T) {
 }
 
 // From workspace 1, h carries the window round to workspace 3, the last, and
-// the second m moves it there with one dispatch.
-func TestNavigatorSecondMMovesTheWindow(t *testing.T) {
+// the second s moves it there with one dispatch.
+func TestNavigatorSecondSMovesTheWindow(t *testing.T) {
 	fake := &fakeHyprctl{}
 
-	if err := navigateWith(t, fake, "lmhm"); err != nil {
+	if err := navigateWith(t, fake, "lshs"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -519,7 +566,7 @@ func TestNavigatorSecondMMovesTheWindow(t *testing.T) {
 func TestNavigatorPutDownOnItsOwnWorkspaceFocuses(t *testing.T) {
 	fake := &fakeHyprctl{}
 
-	if err := navigateWith(t, fake, "hjmkm"); err != nil {
+	if err := navigateWith(t, fake, "hjsks"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -531,6 +578,29 @@ func TestNavigatorPutDownOnItsOwnWorkspaceFocuses(t *testing.T) {
 		{"clients", "-j"},
 		{"dispatch", `hl.dsp.focus({ workspace = "2" })`},
 		{"dispatch", `hl.dsp.focus({ window = "address:0x2b" })`},
+	}
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("calls = %q, want %q", fake.calls, want)
+	}
+}
+
+// Bare m picks nothing up and puts nothing down, and Enter, which is how
+// Ctrl+M arrives, does nothing while a window is carried: only the second s
+// moves the window. The trailing q keys close the navigator if either one
+// ever shifts.
+func TestNavigatorBareMAndEnterNeverShift(t *testing.T) {
+	fake := &fakeHyprctl{}
+
+	if err := navigateWith(t, fake, "lmshm\rsqq"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := [][]string{
+		{"workspaces", "-j"},
+		{"clients", "-j"},
+		{"activeworkspace", "-j"},
+		{"clients", "-j"},
+		{"dispatch", `hl.dsp.window.move({ workspace = "3", window = "address:0x1a" })`},
 	}
 	if !reflect.DeepEqual(fake.calls, want) {
 		t.Fatalf("calls = %q, want %q", fake.calls, want)

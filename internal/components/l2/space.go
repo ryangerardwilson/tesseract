@@ -40,7 +40,7 @@ func RenderLayerStack(theme l1.Theme, layers []space.Layer, selected int, width 
 		width = 20
 	}
 	if len(layers) == 0 {
-		return theme.Muted.Render("No windows")
+		return theme.Muted.Render("No apps")
 	}
 	classWidth := 0
 	for _, layer := range layers {

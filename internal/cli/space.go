@@ -36,6 +36,22 @@ func dispatchSpace(argv []string, api *tmux.API, out io.Writer) error {
 			return err
 		}
 		return json.NewEncoder(out).Encode(current)
+	case len(argv) == 2 && argv[1] == "new":
+		id, err := space.New(space.Hyprctl)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(map[string]int{"workspace": id})
+	case len(argv) == 3 && argv[1] == "close":
+		id, err := space.ParseWorkspace(argv[2])
+		if err != nil {
+			return err
+		}
+		closed, err := space.Close(space.Hyprctl, id)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(closed)
 	case len(argv) == 4 && argv[1] == "focus":
 		target, err := space.ParseTarget(argv[2], argv[3])
 		if err != nil {

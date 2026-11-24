@@ -17,7 +17,7 @@ import (
 	"github.com/ryangerardwilson/tesseract/internal/version"
 )
 
-const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract open space | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract space list | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address> | tesseract km config | tesseract km apply | tesseract km status"
+const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract open space | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract space list | tesseract space new | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address> | tesseract space close <workspace-id> | tesseract km config | tesseract km apply | tesseract km status"
 
 const helpText = `tesseract
 tmux session picker and restore utility
@@ -64,11 +64,16 @@ features:
   tesseract quickshell list
   tesseract quickshell select root
 
-  print the hyprland workspaces and their window layers as JSON, focus one layer, or move one window to a workspace
+  print the hyprland workspaces and their apps as JSON, focus one app, or move one window to a workspace
   # space list | space focus <workspace_id> <address> | space move <workspace_id> <address>
   tesseract space list
   tesseract space focus 3 0x55d0000000d4
   tesseract space move 2 0x55d0000000d4
+
+  add the workspace past the highest id and land on it, or close every app on one workspace gracefully
+  # space new | space close <workspace_id>
+  tesseract space new
+  tesseract space close 4
 
   edit, install, or inspect the managed keyd sticky-keys config
   # km config | km apply | km status

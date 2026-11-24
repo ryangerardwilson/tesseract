@@ -26,9 +26,13 @@ Item {
     property int layerSteps: 0
     property bool loading: true
     property bool confirming: false
-    // The window the first m picked up, and where the navigator stood when
+    // A place the host brought back from an earlier showing: the workspace id
+    // and the lit app's address. applyList opens on it; workspace 0 is none.
+    property int restoreWorkspace: 0
+    property string restoreAddress: ""
+    // The window the first s picked up, and where the navigator stood when
     // it did, so a cancel can put the picture back. Hyprland does not change
-    // until the second m.
+    // until the second s.
     property var carried: null
     property var carriedFrom: null
     readonly property bool carrying: carried !== null
@@ -42,8 +46,9 @@ Item {
     // The host unmaps its window: Hyprland refuses window focus while an
     // exclusive layer surface is mapped.
     signal hideRequested()
-    // The focus or the move has been started in its own session. The host
-    // closes; the command runs after the host layer is gone.
+    // The focus, the move, the new workspace, or the close has been started
+    // in its own session. The host closes; the command runs after the host
+    // layer is gone.
     signal finished()
     // Escape or q with no window carried.
     signal closeRequested()
@@ -53,6 +58,18 @@ Item {
         lister.running = true;
     }
 
+    // place is where the selection rests: the workspace id and the lit app's
+    // address, "" on a workspace with no apps, and workspace 0 before the
+    // space is read. A host reads it after leave(), so a carried app is
+    // already back where it was picked up.
+    function place() {
+        const workspace = navigator.selectedWorkspace;
+        return {
+            "workspace": workspace ? workspace.id : 0,
+            "address": navigator.selectedLayer ? String(navigator.selectedLayer.address) : ""
+        };
+    }
+
     // leave drops a carried window, which Hyprland never saw, so the host
     // can stop showing the navigator. It refuses while a focus or a move is
     // under way.
@@ -60,6 +77,7 @@ Item {
         if (navigator.confirming)
             return false;
 
+        closeArm.stop();
         if (navigator.carrying)
             navigator.cancelCarry();
 
@@ -72,6 +90,7 @@ Item {
         if (navigator.confirming)
             return ;
 
+        closeArm.stop();
         if (navigator.carrying)
             navigator.cancelCarry();
         else
@@ -83,12 +102,13 @@ Item {
             const parsed = JSON.parse(text);
             const workspaces = parsed.workspaces || [];
             navigator.activeId = parsed.active || 0;
-            navigator.column = Math.max(0, workspaces.findIndex((workspace) => {
-                return workspace.id === navigator.activeId;
-            }));
-            navigator.columnSteps = navigator.column;
-            navigator.chosenLayer = 0;
-            navigator.layerSteps = 0;
+            // Both step counts start at the place, so the orbit settles onto
+            // it instead of turning in from another workspace.
+            const start = navigator.startPlace(workspaces);
+            navigator.column = start.column;
+            navigator.columnSteps = start.column;
+            navigator.chosenLayer = start.layer;
+            navigator.layerSteps = start.layer;
             navigator.workspaces = workspaces;
         } catch (error) {
             console.warn("Unable to parse tesseract space:", error);
@@ -96,6 +116,38 @@ Item {
         }
         navigator.loading = false;
         stage.arrive();
+    }
+
+    // startPlace is where the picture opens: the place the host brought
+    // back, or else the active workspace's front app. A workspace that is
+    // gone gives way to the next lower one, or else the next higher, and an
+    // app that is not on the workspace that opens gives way to its front app.
+    function startPlace(workspaces) {
+        let column = workspaces.findIndex((workspace) => {
+            return workspace.id === navigator.activeId;
+        });
+        const restoring = navigator.restoreWorkspace > 0 && workspaces.length > 0;
+        if (restoring)
+            column = navigator.nearestColumn(workspaces, navigator.restoreWorkspace);
+
+        column = Math.max(0, column);
+        const apps = workspaces.length > 0 ? (workspaces[column].layers || []) : [];
+        const layer = restoring && navigator.restoreAddress !== "" ? apps.findIndex((app) => {
+            return app.address === navigator.restoreAddress;
+        }) : 0;
+        return {
+            "column": column,
+            "layer": Math.max(0, layer)
+        };
+    }
+
+    // nearestColumn is the column of workspace id, or else of the next lower
+    // id, or else of the next higher. The X axis is in ascending id order.
+    function nearestColumn(workspaces, id) {
+        let column = 0;
+        for (let index = 0; index < workspaces.length && workspaces[index].id <= id; index++)
+            column = index;
+        return column;
     }
 
     // moveColumn steps on X, cycles past either end, and starts the new
@@ -150,8 +202,8 @@ Item {
         return way > count / 2 ? way - count : way;
     }
 
-    // carry picks up the selected window on the first m and puts it down on
-    // the second. With no window selected, m does nothing.
+    // carry picks up the selected window on the first s and puts it down on
+    // the second. With no window selected, s does nothing.
     function carry() {
         if (navigator.carrying) {
             navigator.putDown();
@@ -169,11 +221,86 @@ Item {
 
     // commandAfterUnmap starts tesseract in its own session. setsid -f
     // returns at once so the host can close. The command waits until this
-    // host's layer is gone, then focuses or moves. Hyprland refuses a
-    // window focus while that exclusive layer is mapped.
+    // host's layer is gone, then focuses, moves, adds a workspace, or closes
+    // one. Hyprland refuses a window focus while that exclusive layer is
+    // mapped, and a save dialog needs the keyboard. In each script "$0" is
+    // the binary, "$1" the workspace, and "$2" the window.
     function commandAfterUnmap(action, workspace, address) {
-        const script = action === "move-focus" ? "export TESSERACT_SPACE_WAIT_LAYER=1; \"$0\" space move \"$1\" \"$2\" && exec \"$0\" space focus \"$1\" \"$2\"" : action === "move" ? "export TESSERACT_SPACE_WAIT_LAYER=1; exec \"$0\" space move \"$1\" \"$2\"" : "export TESSERACT_SPACE_WAIT_LAYER=1; exec \"$0\" space focus \"$1\" \"$2\"";
-        return ["setsid", "-f", "bash", "-c", script, navigator.command, workspace, address];
+        const scripts = {
+            "focus": "exec \"$0\" space focus \"$1\" \"$2\"",
+            "move": "exec \"$0\" space move \"$1\" \"$2\"",
+            "move-focus": "\"$0\" space move \"$1\" \"$2\" && exec \"$0\" space focus \"$1\" \"$2\"",
+            "new": "exec \"$0\" space new",
+            "close": "exec \"$0\" space close \"$1\""
+        };
+        const script = "export TESSERACT_SPACE_WAIT_LAYER=1; " + scripts[action];
+        return ["setsid", "-f", "bash", "-c", script, navigator.command, workspace || "", address || ""];
+    }
+
+    // startAfterUnmap asks the host to hide and starts command; finished()
+    // follows once the command is in its own session.
+    function startAfterUnmap(command) {
+        focuser.command = command;
+        navigator.hideRequested();
+        focuser.running = true;
+    }
+
+    // select puts the selection on workspace index, at its front app.
+    function select(index) {
+        navigator.columnSteps += navigator.shortWay(index - navigator.column, navigator.workspaces.length);
+        navigator.column = index;
+        navigator.chosenLayer = 0;
+        navigator.layerSteps = 0;
+    }
+
+    // addWorkspace adds the workspace one past the highest id and selects
+    // it. The host hides and closes, and the operator lands on the new
+    // workspace once the host layer is gone. No window moves.
+    function addWorkspace() {
+        if (navigator.carrying || navigator.loading)
+            return ;
+
+        const id = 1 + navigator.workspaces.reduce((highest, workspace) => {
+            return Math.max(highest, workspace.id);
+        }, 0);
+        navigator.confirming = true;
+        navigator.workspaces = navigator.workspaces.concat([{
+            "id": id,
+            "name": String(id),
+            "layers": []
+        }]);
+        navigator.select(navigator.workspaces.length - 1);
+        navigator.startAfterUnmap(navigator.commandAfterUnmap("new"));
+    }
+
+    // pressClose arms dd on a first d and closes the selected workspace on a
+    // second d within closeArm's 400 ms. A d that only repeats while held,
+    // a carried window, or one workspace on the orbit closes nothing.
+    function pressClose(repeated) {
+        if (repeated || navigator.carrying || navigator.workspaces.length < 2 || !navigator.selectedWorkspace)
+            return ;
+
+        if (!closeArm.running) {
+            closeArm.restart();
+            return ;
+        }
+        closeArm.stop();
+        navigator.closeWorkspace();
+    }
+
+    // closeWorkspace takes the selected workspace off the orbit and selects
+    // the next lower one, or else the next higher. Each app on it gets one
+    // graceful close once the host layer is gone, so a save dialog can take
+    // the keyboard.
+    function closeWorkspace() {
+        const closed = navigator.selectedWorkspace.id;
+        const index = navigator.column;
+        navigator.confirming = true;
+        navigator.workspaces = navigator.workspaces.filter((workspace) => {
+            return workspace.id !== closed;
+        });
+        navigator.select(Math.max(0, index - 1));
+        navigator.startAfterUnmap(navigator.commandAfterUnmap("close", String(closed)));
     }
 
     // putDown leaves the window where h, j, k, and l carried it. Put down in
@@ -198,7 +325,7 @@ Item {
         focuser.running = true;
     }
 
-    // cancelCarry puts the picture back where it stood before the first m,
+    // cancelCarry puts the picture back where it stood before the first s,
     // the short way round, and dispatches nothing.
     function cancelCarry() {
         const from = navigator.carriedFrom;
@@ -241,17 +368,36 @@ Item {
         return event.key === Qt.Key_Return || event.key === Qt.Key_Enter || (event.key === Qt.Key_M && (event.modifiers & Qt.ControlModifier));
     }
 
+    // A key with no Ctrl, Alt, Shift, or Super held.
+    function isBareKey(event, key) {
+        const held = Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier | Qt.MetaModifier;
+        return event.key === key && (event.modifiers & held) === 0;
+    }
+
+    // handleKey takes the navigator's keys. Ctrl+M is Enter and is checked
+    // before s, so it never shifts. Bare n adds a workspace and bare dd
+    // closes the selected one; any other key forgets a waiting d first and
+    // then does its own job. Bare m is not a navigator key: it stays
+    // unaccepted, so a host can bind it.
     function handleKey(event) {
         event.accepted = true;
         if (navigator.confirming)
             return ;
 
+        const closing = navigator.isBareKey(event, Qt.Key_D);
+        if (!closing)
+            closeArm.stop();
+
         if (navigator.isEscapeKey(event) || event.key === Qt.Key_Q)
             navigator.cancel();
         else if (navigator.isReturnKey(event))
             navigator.confirm();
-        else if (event.key === Qt.Key_M)
+        else if (event.key === Qt.Key_S && !(event.modifiers & Qt.ControlModifier))
             navigator.carry();
+        else if (navigator.isBareKey(event, Qt.Key_N))
+            navigator.addWorkspace();
+        else if (closing)
+            navigator.pressClose(event.isAutoRepeat);
         else if (event.key === Qt.Key_Left || event.key === Qt.Key_H)
             navigator.moveColumn(-1);
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_L)
@@ -281,9 +427,16 @@ Item {
 
     }
 
+    // The first d of dd waits here for its second.
+    Timer {
+        id: closeArm
+
+        interval: 400
+    }
+
     // setsid -f returns as soon as the command is in its own session. The
-    // host closes on finished(); the command focuses or moves after the
-    // layer is gone.
+    // host closes on finished(); the command focuses, moves, adds a
+    // workspace, or closes one after the layer is gone.
     Process {
         id: focuser
 

@@ -205,7 +205,7 @@ func TestRunUsageListsTheSpaceForms(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected an invalid command to fail")
 	}
-	for _, form := range []string{"tesseract open space", "tesseract space list", "tesseract space focus <workspace-id> <address>", "tesseract space move <workspace-id> <address>", "tesseract open picker"} {
+	for _, form := range []string{"tesseract open space", "tesseract space list", "tesseract space new", "tesseract space focus <workspace-id> <address>", "tesseract space move <workspace-id> <address>", "tesseract space close <workspace-id>", "tesseract open picker"} {
 		if !strings.Contains(errOut, form) {
 			t.Fatalf("usage missing %q: %s", form, errOut)
 		}
@@ -215,7 +215,7 @@ func TestRunUsageListsTheSpaceForms(t *testing.T) {
 func TestRunHelpListsTheSpaceCommands(t *testing.T) {
 	code, out, _ := runCLI(t, "help")
 
-	if code != 0 || !strings.Contains(out, "tesseract open space") || !strings.Contains(out, "tesseract space list") || !strings.Contains(out, "tesseract space move") {
+	if code != 0 || !strings.Contains(out, "tesseract open space") || !strings.Contains(out, "tesseract space list") || !strings.Contains(out, "tesseract space move") || !strings.Contains(out, "tesseract space new") || !strings.Contains(out, "tesseract space close") {
 		t.Fatalf("help missing the space commands:\n%s", out)
 	}
 }

@@ -6,6 +6,7 @@ package space
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,7 +17,7 @@ import (
 	"time"
 )
 
-const Usage = "valid shape: tesseract space list | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address>"
+const Usage = "valid shape: tesseract space list | tesseract space new | tesseract space focus <workspace-id> <address> | tesseract space move <workspace-id> <address> | tesseract space close <workspace-id>"
 
 // Layer is one window on the Z axis of its workspace.
 type Layer struct {
@@ -44,6 +45,14 @@ type Space struct {
 type Target struct {
 	Workspace int    `json:"workspace"`
 	Address   string `json:"address"`
+}
+
+// Closed is what space close did: the apps it asked to close, and the
+// workspace it focused afterwards, if it left the closed one.
+type Closed struct {
+	Workspace int      `json:"workspace"`
+	Closed    []string `json:"closed"`
+	Focus     int      `json:"focus,omitempty"`
 }
 
 // Runner runs hyprctl with args and returns what it printed on stdout.
@@ -75,6 +84,13 @@ const waitLayerEnv = "TESSERACT_SPACE_WAIT_LAYER"
 var (
 	hostLayerWait   = 50 * time.Millisecond
 	hostLayerGiveUp = 2 * time.Second
+)
+
+// A closed active workspace is left only once its windows are gone. Close
+// reads the clients every closeSettleWait, for up to closeSettleGiveUp.
+var (
+	closeSettleWait   = 100 * time.Millisecond
+	closeSettleGiveUp = 1500 * time.Millisecond
 )
 
 // waitForHostLayer returns immediately unless waitLayerEnv is set. It polls
@@ -295,6 +311,137 @@ func Move(run Runner, target Target) error {
 	}
 	waitForHostLayer(run)
 	return dispatch(run, fmt.Sprintf(`hl.dsp.window.move({ workspace = "%d", window = "address:%s" })`, target.Workspace, target.Address))
+}
+
+// New adds a workspace: it focuses the id one past the highest positive
+// workspace, which Hyprland creates on focus, and moves no window. Free ids
+// below the highest are not reused.
+func New(run Runner) (int, error) {
+	out, err := query(run, "workspaces")
+	if err != nil {
+		return 0, err
+	}
+	var workspaces []workspaceJSON
+	if err := decode("workspaces", out, &workspaces); err != nil {
+		return 0, err
+	}
+	id := nextWorkspaceID(workspaces)
+	waitForHostLayer(run)
+	return id, dispatch(run, focusWorkspace(id))
+}
+
+func nextWorkspaceID(workspaces []workspaceJSON) int {
+	highest := 0
+	for _, workspace := range workspaces {
+		highest = max(highest, workspace.ID)
+	}
+	return highest + 1
+}
+
+func focusWorkspace(id int) string {
+	return fmt.Sprintf(`hl.dsp.focus({ workspace = "%d" })`, id)
+}
+
+// ParseWorkspace checks the command-line form of a workspace id.
+func ParseWorkspace(workspace string) (int, error) {
+	id, err := strconv.Atoi(workspace)
+	if err != nil || id < 1 {
+		return 0, fmt.Errorf("workspace id must be a positive integer: %q", workspace)
+	}
+	return id, nil
+}
+
+// Close asks every app of one workspace to close: one graceful close each,
+// front first, and never a kill. It lists the space afresh, refuses a
+// workspace off the X axis and the only one on it, and waits for the host
+// layer first, so a save dialog an app raises can take the keyboard. When the
+// workspace was the active one and no window is left on it, it focuses the
+// nearest other workspace, the next lower id or else the next higher, so
+// Hyprland drops the empty one. A window that stays keeps the workspace.
+func Close(run Runner, workspace int) (Closed, error) {
+	result := Closed{Workspace: workspace, Closed: []string{}}
+	current, err := List(run)
+	if err != nil {
+		return result, err
+	}
+	apps, nearest, err := closable(current, workspace)
+	if err != nil {
+		return result, err
+	}
+	waitForHostLayer(run)
+	var failed []error
+	for _, app := range apps {
+		if err := closeApp(run, app.Address); err != nil {
+			failed = append(failed, err)
+			continue
+		}
+		result.Closed = append(result.Closed, app.Address)
+	}
+	if current.Active == workspace && emptied(run, workspace) {
+		if err := dispatch(run, focusWorkspace(nearest)); err != nil {
+			failed = append(failed, err)
+		} else {
+			result.Focus = nearest
+		}
+	}
+	return result, errors.Join(failed...)
+}
+
+// closable is the apps of workspace, front first, and the nearest other
+// workspace on the X axis: the next lower id, or else the next higher.
+func closable(current Space, workspace int) ([]Layer, int, error) {
+	for index, candidate := range current.Workspaces {
+		if candidate.ID != workspace {
+			continue
+		}
+		if len(current.Workspaces) < 2 {
+			return nil, 0, fmt.Errorf("workspace %d is the only workspace", workspace)
+		}
+		if index > 0 {
+			return candidate.Layers, current.Workspaces[index-1].ID, nil
+		}
+		return candidate.Layers, current.Workspaces[index+1].ID, nil
+	}
+	return nil, 0, fmt.Errorf("no workspace %d", workspace)
+}
+
+func closeApp(run Runner, address string) error {
+	if !addressRE.MatchString(strings.ToLower(address)) {
+		return fmt.Errorf("window address must be 0x and hex digits: %q", address)
+	}
+	return dispatch(run, fmt.Sprintf(`hl.dsp.window.close({ window = "address:%s" })`, address))
+}
+
+// emptied waits for the closes to land. It reads the clients until no mapped
+// window is left on workspace, or until closeSettleGiveUp, and reports
+// whether the workspace came empty.
+func emptied(run Runner, workspace int) bool {
+	deadline := time.Now().Add(closeSettleGiveUp)
+	for {
+		out, err := run("clients", "-j")
+		if err == nil && !holdsWindow(out, workspace) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(closeSettleWait)
+	}
+}
+
+// holdsWindow reports whether a mapped window is on workspace. A reply that
+// is not JSON counts as holding one, so focus never leaves on a guess.
+func holdsWindow(out []byte, workspace int) bool {
+	var clients []clientJSON
+	if json.Unmarshal(out, &clients) != nil {
+		return true
+	}
+	for _, client := range clients {
+		if client.Mapped && client.Workspace.ID == workspace {
+			return true
+		}
+	}
+	return false
 }
 
 // layerWorkspace is the workspace that holds the window at address as a

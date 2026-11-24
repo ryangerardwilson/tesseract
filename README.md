@@ -99,8 +99,10 @@ tesseract open space
 tesseract quickshell list
 tesseract quickshell select root
 tesseract space list
+tesseract space new
 tesseract space focus 3 0x55d0000000d4
 tesseract space move 2 0x55d0000000d4
+tesseract space close 4
 tesseract reload bindings
 tesseract restore sessions
 tesseract snapshot sessions
@@ -214,8 +216,10 @@ Sessions with actively working AI panes (Codex or Grok Build) show the same comp
 ```bash
 tesseract open space
 tesseract space list
+tesseract space new
 tesseract space focus 3 0x55d0000000d4
 tesseract space move 2 0x55d0000000d4
+tesseract space close 4
 ```
 
 `tesseract open space` opens a Quickshell overlay that shows the Hyprland
@@ -225,39 +229,42 @@ a glowing glass sphere at the centre with its number on it, and the other
 workspaces are smaller spheres on one orbit around it, seen nearly edge-on:
 lower ids to the left, higher ids to the right, smaller and dimmer as the orbit
 turns away. Z is the windows of the selected workspace, electrons on concentric
-shells around the nucleus: the front layer's shell is the tight, bright one,
-each deeper layer's shell is wider and dimmer, and each shell carries one
-satellite with its window's class and title. A window is a layer of the one
+shells around the nucleus: the front app's shell is the tight, bright one,
+each deeper app's shell is wider and dimmer, and each shell carries one
+satellite with its window's class and title. A window is an app of the one
 workspace its `workspace.id` names, so a pinned window is not repeated on every
-workspace. Hidden and unmapped windows are not layers.
+workspace. Hidden and unmapped windows are not apps.
 
-Layers are ordered by `focusHistoryID` from `hyprctl clients -j`, compared only
+Apps are ordered by `focusHistoryID` from `hyprctl clients -j`, compared only
 among the windows of one workspace: the lowest value, the window that workspace
-focused most recently, is the front layer.
+focused most recently, is the front app.
 
 Core actions:
 
-- `h` / `l` or left / right: turn the orbit so the workspace on the left or right swings to the front and becomes the nucleus, at its front layer
-- `k` or up: step one shell inward, toward the front layer
-- `j` or down: step one shell outward, to the next deeper layer; the shells ease inward until it is the tight, bright one
+- `h` / `l` or left / right: turn the orbit so the workspace on the left or right swings to the front and becomes the nucleus, at its front app
+- `k` or up: step one shell inward, toward the front app
+- `j` or down: step one shell outward, to the next deeper app; the shells ease inward until it is the tight, bright one
 - `enter` or Ctrl+M: the chosen satellite rushes toward you, the overlay closes, and that workspace and window are focused once the overlay's layer is gone
-- `m`: pick up the lit electron's window; the footer says `MOVE`
-- while carrying, `h` / `l`: carry it to the workspace on the left or right, which swings to the front with the carried electron lit on its tight shell, at its front layer
-- while carrying, `j` / `k`: carry it one shell deeper or one shell toward the front; the other windows keep their order, and both wrap
-- while carrying, `m`: put it down; in a new place, the overlay closes and moves the window through `tesseract space move`
-- while carrying, `q` or `esc`: put the picture back where it was before the first `m` and dispatch nothing; `enter` and Ctrl+M do nothing
+- `s`: pick up the lit app; the footer says `SHIFT`
+- while carrying, `h` / `l`: carry it to the workspace on the left or right, which swings to the front with the carried electron lit on its tight shell, as its front app
+- while carrying, `j` / `k`: carry it one shell deeper or one shell toward the front; the other apps keep their order, and both wrap
+- while carrying, `s`: put it down; in a new place, the overlay closes and moves the window through `tesseract space move`
+- while carrying, `q` or `esc`: put the picture back where it was before the first `s` and dispatch nothing; `enter` and Ctrl+M do nothing
+- `n`: add the workspace one past the highest id and select it; the overlay closes and you land on it through `tesseract space new`, and no window moves
+- `d`, then `d` again within about 400 ms: close the selected workspace; it leaves the orbit, the overlay closes, and `tesseract space close` asks each of its apps to close. A single `d`, Ctrl+D, a held `d`, or a `d` before another key closes nothing, and that key still does its job. `n` and `d` do nothing while carrying, and `dd` does nothing when only one workspace is left
 - `q` or `esc`: close and leave the desktop as it was
 
 The overlay opens with the camera falling in toward the nucleus while the
 orbit settles out of a slow spin onto the active workspace. It draws its
 spheres and rings with Qt Quick shapes and does not need Qt Quick 3D.
-Moving and carrying never change anything; `enter`, Ctrl+M, and the second `m` are the
-only changes. A window put down at the front of another workspace is moved
+Moving and carrying never change anything; `enter`, Ctrl+M, the second `s`,
+`n`, and `dd` are the only changes. A window put down at the front of another workspace is moved
 with one dispatch. Put down behind another window, or in a new place on its
 own workspace, it is moved and then focused, so it lands on top:
 `/usr/share/hypr` documents no arguments for a z-order dispatcher. The
 overlay reads the space from `tesseract space list`, focuses through
-`tesseract space focus`, and moves through `tesseract space move`; it never
+`tesseract space focus`, moves through `tesseract space move`, adds through
+`tesseract space new`, and closes through `tesseract space close`; it never
 runs `hyprctl` itself. If the overlay cannot
 run, `tesseract open space` opens the same navigator in the terminal, with the
 same keys.
@@ -268,7 +275,8 @@ only draws. The overlay's `shell.qml` hosts it in a full-screen panel, and
 another Quickshell shell can host the same component: the host names the
 tesseract binary, calls `open()`, passes it the keys, hides its own window on
 `hideRequested()`, and closes on `finished()` and `closeRequested()`. A host
-with its own backdrop can clear the black void with `voidOpacity`.
+with its own backdrop can clear the black void with `voidOpacity`. Bare `m` is
+not a navigator key, so a host can bind it.
 
 `tesseract space list` prints the space as JSON. `active` is the active
 workspace when it is on the X axis.
@@ -290,15 +298,31 @@ workspace when it is on the X axis.
 ```
 
 `tesseract space focus <workspace-id> <address>` checks that the address is
-still a layer of that workspace, then runs
+still an app of that workspace, then runs
 `hyprctl dispatch 'hl.dsp.focus({ workspace = "<workspace-id>" })'` and
 `hyprctl dispatch 'hl.dsp.focus({ window = "address:<address>" })'`. It never
 moves a window.
 
 `tesseract space move <workspace-id> <address>` checks that the address is
-still a layer, then runs one dispatch,
+still an app, then runs one dispatch,
 `hyprctl dispatch 'hl.dsp.window.move({ workspace = "<workspace-id>", window = "address:<address>" })'`.
 A window already on that workspace is not moved.
+
+`tesseract space new` focuses the workspace one past the highest positive id,
+`hyprctl dispatch 'hl.dsp.focus({ workspace = "<id>" })'`, which Hyprland
+creates on focus. Free ids below the highest are not reused, and no window
+moves.
+
+`tesseract space close <workspace-id>` lists the space afresh and sends each
+app on that workspace one graceful close,
+`hyprctl dispatch 'hl.dsp.window.close({ window = "address:<address>" })'`,
+front app first. It never kills, never sends a second close, and refuses the
+only workspace and a workspace off the X axis. When the closed workspace was
+the active one and no window is left on it after about 1.5 s, it focuses the
+next lower workspace, or else the next higher, so Hyprland drops the empty
+one. An app that stays, such as one asking to save, keeps the workspace
+focused. The navigator runs both commands only after its layer is gone, so a
+save dialog can take the keyboard.
 
 ## Automatic Restore
 

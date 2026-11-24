@@ -3,7 +3,10 @@
 package spacenav
 
 import (
+	"os/signal"
 	"slices"
+	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ryangerardwilson/tesseract/internal/components/l1"
@@ -18,15 +21,36 @@ type model struct {
 	layer  int
 	width  int
 	target *space.Target
-	// carried is the window the first m picked up, nil when none is.
+	// carried is the window the first s picked up, nil when none is.
 	carried *carried
-	// placed is where the second m put it down; it moves after the
+	// placed is where the second s put it down; it moves after the
 	// navigator exits.
 	placed *placement
+	// created is set by n: a new workspace is added after the navigator
+	// exits.
+	created bool
+	// closing is the workspace dd closes after the navigator exits, 0 for
+	// none.
+	closing int
+	// armed is when the d that dd starts with was pressed, zero when no d
+	// is waiting for its second.
+	armed time.Time
 }
 
+// now is the clock dd is timed by. Tests replace it.
+var now = time.Now
+
+// A second d closes the selected workspace when it follows the first within
+// closeWindow. A d sooner than repeatGap after the last one is a held key
+// repeating, so it only arms again: a terminal cannot tell a repeat from a
+// press, and Hyprland repeats every 25 ms.
+const (
+	closeWindow = 400 * time.Millisecond
+	repeatGap   = 60 * time.Millisecond
+)
+
 // carried is a window on its way to a new place, and where the navigator
-// stood when m picked it up, so a cancel can go back there.
+// stood when s picked it up, so a cancel can go back there.
 type carried struct {
 	window space.Layer
 	column int
@@ -60,13 +84,33 @@ func navigate(run space.Runner, options ...tea.ProgramOption) error {
 		return err
 	}
 	final, ok := result.(model)
-	if ok && final.placed != nil {
-		return final.placed.apply(run)
-	}
-	if !ok || final.target == nil {
+	if !ok {
 		return nil
 	}
-	return space.Focus(run, *final.target)
+	if final.closing > 0 {
+		// The terminal running the navigator may be one of the apps it
+		// closes. Its hangup must not stop the other closes or the landing.
+		signal.Ignore(syscall.SIGHUP)
+	}
+	return final.commit(run)
+}
+
+// commit runs what the navigator chose once it has exited: a move, a new
+// workspace, a close, or a focus. Quitting chose nothing.
+func (m model) commit(run space.Runner) error {
+	switch {
+	case m.placed != nil:
+		return m.placed.apply(run)
+	case m.created:
+		_, err := space.New(run)
+		return err
+	case m.closing > 0:
+		_, err := space.Close(run, m.closing)
+		return err
+	case m.target != nil:
+		return space.Focus(run, *m.target)
+	}
+	return nil
 }
 
 // apply moves the window through the same check and dispatch as tesseract
@@ -119,8 +163,15 @@ func (m model) View() string {
 	})
 }
 
+// handleKey takes the navigator's keys: s picks up and puts down, enter or
+// ctrl+m confirms and never shifts, n adds a workspace, and dd closes the
+// selected one. Bare m is not a key. Any key but d forgets a waiting d first.
 func (m model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch key.String() {
+	name := key.String()
+	if name != "d" {
+		m.armed = time.Time{}
+	}
+	switch name {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q", "esc":
@@ -128,7 +179,7 @@ func (m model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.cancel()
-	case "m":
+	case "s":
 		if m.carry() {
 			return m, tea.Quit
 		}
@@ -145,8 +196,34 @@ func (m model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.target = &target
 			return m, tea.Quit
 		}
+	case "n":
+		if m.carried == nil {
+			m.created = true
+			return m, tea.Quit
+		}
+	case "d":
+		if m.pressClose() {
+			return m, tea.Quit
+		}
 	}
 	return m, nil
+}
+
+// pressClose arms dd on a d, and reports whether this d is the second one,
+// which closes the selected workspace. While a window is carried, or with one
+// workspace, d does nothing.
+func (m *model) pressClose() bool {
+	if m.carried != nil || len(m.space.Workspaces) < 2 {
+		return false
+	}
+	pressed := now()
+	if gap := pressed.Sub(m.armed); !m.armed.IsZero() && gap >= repeatGap && gap <= closeWindow {
+		m.armed = time.Time{}
+		m.closing = m.space.Workspaces[m.column].ID
+		return true
+	}
+	m.armed = pressed
+	return false
 }
 
 // moveColumn steps on X, cycles past either end, and starts the new
@@ -165,7 +242,7 @@ func (m *model) moveLayer(delta int) {
 	m.layer = cycle(m.layer+delta, len(m.layers()))
 }
 
-// carry picks up the selected window on the first m and puts it down on the
+// carry picks up the selected window on the first s and puts it down on the
 // second. It reports whether the window was put down in a new place.
 func (m *model) carry() bool {
 	if m.carried != nil {
@@ -192,7 +269,7 @@ func (m *model) putDown() bool {
 	return true
 }
 
-// cancel puts the carried window back where m picked it up.
+// cancel puts the carried window back where s picked it up.
 func (m *model) cancel() {
 	m.column, m.layer = m.carried.column, m.carried.layer
 	m.carried = nil

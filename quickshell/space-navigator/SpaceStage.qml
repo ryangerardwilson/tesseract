@@ -133,9 +133,9 @@ Item {
         if (stage.selectedWorkspace) {
             const name = "WORKSPACE " + String(stage.selectedWorkspace.name || stage.selectedWorkspace.id).toUpperCase();
             if (stage.layerCount === 0)
-                return name + "   ·   NO WINDOWS";
+                return name + "   ·   NO APPS";
 
-            return name + "   ·   LAYER " + (stage.chosenLayer + 1) + " / " + stage.layerCount;
+            return name + "   ·   APP " + (stage.chosenLayer + 1) + " / " + stage.layerCount;
         }
         return stage.loading ? "READING HYPRLAND" : "NO WORKSPACES";
     }
@@ -568,7 +568,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Math.round(24 * eye.unit)
-        text: stage.carrying ? "MOVE      H L  WORKSPACE      K J  LAYER      M  PUT DOWN      Q  CANCEL" : "H L  WORKSPACE      K J  LAYER      ENTER  FOCUS      Q  CLOSE"
+        text: stage.carrying ? "SHIFT      H L  WORKSPACE      K J  APP      S  PUT DOWN      Q  CANCEL" : "H L  WORKSPACE      K J  APP      ENTER  FOCUS      N  NEW      DD  CLOSE      Q  CLOSE"
         textFormat: Text.PlainText
         color: stage.carrying ? "#bdbdbd" : "#5c5c5c"
         opacity: stage.rushFade
