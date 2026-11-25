@@ -18,20 +18,34 @@ func TestPackagesImportOnlyWhatTheirRuleAllows(t *testing.T) {
 	// no adapter or UI package; UI and entry packages depend on them, not the
 	// reverse. A new package fails this test until it is given a row.
 	allowedImports := map[string][]string{
-		"":                    nil,
-		"cmd/tesseract":       {"internal/cli"},
-		"internal/assets":     {""},
-		"internal/browser":    {"internal/quickshell", "internal/snapshot", "internal/tmux"},
-		"internal/cli":        {"internal/assets", "internal/browser", "internal/keyd", "internal/quickshell", "internal/snapshot", "internal/tmux", "internal/version"},
-		"internal/keyd":       nil,
-		"internal/quickshell": {"internal/assets", "internal/snapshot", "internal/tmux"},
-		"internal/snapshot":   {"internal/tmux"},
-		"internal/tmux":       nil,
-		"internal/version":    nil,
+		"":                           nil,
+		"cmd/tesseract":              {"internal/cli"},
+		"internal/assets":            {""},
+		"internal/browser":           {"internal/quickshell", "internal/snapshot", "internal/tmux"},
+		"internal/cli":               {"internal/assets", "internal/browser", "internal/keyd", "internal/musica/cli", "internal/quickshell", "internal/snapshot", "internal/tmux", "internal/version"},
+		"internal/keyd":              nil,
+		"internal/musica/app":        {"internal/musica/config", "internal/musica/download", "internal/musica/library", "internal/musica/player", "internal/musica/session", "internal/musica/store", "internal/musica/visualizer"},
+		"internal/musica/cli":        {"internal/musica/app", "internal/musica/config", "internal/musica/download", "internal/musica/session", "internal/musica/store", "internal/version"},
+		"internal/musica/config":     nil,
+		"internal/musica/download":   {"internal/musica/library", "internal/musica/store"},
+		"internal/musica/library":    nil,
+		"internal/musica/player":     nil,
+		"internal/musica/session":    nil,
+		"internal/musica/store":      nil,
+		"internal/musica/visualizer": nil,
+		"internal/quickshell":        {"internal/assets", "internal/snapshot", "internal/tmux"},
+		"internal/snapshot":          {"internal/tmux"},
+		"internal/tmux":              nil,
+		"internal/version":           nil,
+		"player":                     {"internal/musica/cli"},
 	}
 
-	// Only the terminal browser may use a UI framework.
-	thirdPartyImporters := map[string]bool{"internal/browser": true}
+	// The terminal browser and the musica player may use a UI framework.
+	thirdPartyImporters := map[string]bool{
+		"internal/browser":         true,
+		"internal/musica/app":      true,
+		"internal/musica/download": true,
+	}
 
 	imports := moduleImports(t)
 	for pkg := range allowedImports {
@@ -48,7 +62,7 @@ func TestPackagesImportOnlyWhatTheirRuleAllows(t *testing.T) {
 		for _, dep := range deps {
 			if strings.HasPrefix(dep, "third-party:") {
 				if !thirdPartyImporters[pkg] {
-					t.Errorf("package %q imports %s; only the browser may import a third-party module", pkg, strings.TrimPrefix(dep, "third-party:"))
+					t.Errorf("package %q imports %s; only the browser and the musica player may import a third-party module", pkg, strings.TrimPrefix(dep, "third-party:"))
 				}
 				continue
 			}

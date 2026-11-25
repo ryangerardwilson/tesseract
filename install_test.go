@@ -125,6 +125,10 @@ esac
 	if err != nil || kmLink != "tesseract" {
 		t.Fatalf("km launcher: %v %q", err, kmLink)
 	}
+	musicaLink, err := os.Readlink(filepath.Join(homeDir, ".local", "bin", "musica"))
+	if err != nil || musicaLink != "tesseract" {
+		t.Fatalf("musica launcher: %v %q", err, musicaLink)
+	}
 	if _, err := os.Stat(publicLauncher); err != nil {
 		t.Fatalf("public launcher missing: %v", err)
 	}

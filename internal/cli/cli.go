@@ -11,13 +11,14 @@ import (
 	"github.com/ryangerardwilson/tesseract/internal/assets"
 	"github.com/ryangerardwilson/tesseract/internal/browser"
 	"github.com/ryangerardwilson/tesseract/internal/keyd"
+	musicacli "github.com/ryangerardwilson/tesseract/internal/musica/cli"
 	"github.com/ryangerardwilson/tesseract/internal/quickshell"
 	"github.com/ryangerardwilson/tesseract/internal/snapshot"
 	"github.com/ryangerardwilson/tesseract/internal/tmux"
 	"github.com/ryangerardwilson/tesseract/internal/version"
 )
 
-const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract km config | tesseract km apply | tesseract km status"
+const usage = "valid shape: tesseract open picker | tesseract open browser | tesseract reload bindings | tesseract restore sessions | tesseract snapshot sessions | tesseract attach session <name> | tesseract quickshell list | tesseract quickshell select <name> | tesseract km config | tesseract km apply | tesseract km status | tesseract musica"
 
 const helpText = `tesseract
 tmux session picker and restore utility
@@ -66,6 +67,11 @@ features:
   tesseract km apply
   tesseract km status
 
+  play in the Musica center
+  # musica
+  tesseract musica
+  musica
+
   inside the browser, create or rename a named session
   # n | r
   n
@@ -101,6 +107,9 @@ func Run(argv []string, api *tmux.API, out io.Writer, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "global actions must be used alone")
 		return 1
 	}
+	if len(argv) > 0 && argv[0] == "musica" {
+		return musicacli.Command(argv[1:], os.Stdin, out, errOut)
+	}
 	if argv[0] == "km" {
 		return runKM(argv[1:], api, out, errOut)
 	}
@@ -131,7 +140,10 @@ func Run(argv []string, api *tmux.API, out io.Writer, errOut io.Writer) int {
 }
 
 func RunInvoked(argv0 string, argv []string, api *tmux.API, out io.Writer, errOut io.Writer) int {
-	if filepath.Base(argv0) == "km" {
+	switch filepath.Base(argv0) {
+	case "musica":
+		return musicacli.Command(argv, os.Stdin, out, errOut)
+	case "km":
 		argv = append([]string{"km"}, argv...)
 	}
 	return Run(argv, api, out, errOut)

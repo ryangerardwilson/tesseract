@@ -32,7 +32,9 @@ under `~/.tesseract/bin/tesseract`, with the release bundle in `~/.tesseract/app
 `tesseract` also owns the keyd sticky-keys config. The editable file stays
 `~/.config/km/keyd.config`. `tesseract km config`, `tesseract km apply`, and
 `tesseract km status` edit, install, and inspect it. The `km` command is the
-same installed binary.
+same installed binary. `musica` is that same binary for the player: `musica`
+and `tesseract musica` open the Musica center, and `musica serve` keeps the
+session that center draws.
 
 Installer shortcuts:
 

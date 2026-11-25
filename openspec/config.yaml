@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   tesseract is a Go tmux session browser. The command is tesseract.
-  The same binary answers as km for keyd sticky keys.
+  The same binary answers as km for keyd sticky keys and as musica for the player.
   Session snapshots persist through nebula's sql command, in the database
   tesseract. The managed tmux layer is installed under ~/.config/tmux/.
   The editable sticky-keys file is ~/.config/km/keyd.config.

@@ -123,6 +123,12 @@ EOF
   elif [[ -f "$km_launcher" ]] && grep -Eq '^# Managed by km( installer)? local-bin launcher$' "$km_launcher"; then
     ln -sfn tesseract "$km_launcher"
   fi
+  local musica_launcher="$PUBLIC_BIN_DIR/musica"
+  if [[ -L "$musica_launcher" || ! -e "$musica_launcher" ]]; then
+    ln -sfn tesseract "$musica_launcher"
+  elif [[ -f "$musica_launcher" ]] && grep -Eq '^# Managed by musica( installer)? local-bin launcher$' "$musica_launcher"; then
+    ln -sfn tesseract "$musica_launcher"
+  fi
 }
 
 install_assets() {

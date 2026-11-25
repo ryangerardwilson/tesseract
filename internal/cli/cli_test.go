@@ -84,6 +84,34 @@ func TestRunInvokedAsKMPrintsTesseractVersion(t *testing.T) {
 	}
 }
 
+func TestRunInvokedAsMusicaPrintsTesseractVersion(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	code := RunInvoked("/home/ryan/.local/bin/musica", []string{"version"}, tmux.NewAPI(map[string]string{"HOME": t.TempDir()}), &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("unexpected code: %d stderr=%s", code, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "0.0.0" {
+		t.Fatalf("unexpected version output: %q", out.String())
+	}
+}
+
+func TestRunMusicaVersionDoesNotPrepareTmux(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	code := Run([]string{"musica", "version"}, tmux.NewAPI(map[string]string{"HOME": t.TempDir()}), &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("unexpected code: %d stderr=%s", code, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "0.0.0" {
+		t.Fatalf("unexpected version output: %q", out.String())
+	}
+}
+
 func TestRunKMHelpDoesNotPrepareTmux(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer

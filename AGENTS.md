@@ -84,7 +84,7 @@ Do not edit canonical specs directly to smuggle in new behavior.
 Repository: `tesseract` at `github.com/ryangerardwilson/tesseract`.
 
 tesseract is one Go binary. It browses tmux sessions and owns the keyd
-sticky-keys commands under `km`. Session snapshots persist through
+sticky-keys commands under `km` and the player under `musica`. Session snapshots persist through
 [nebula](https://github.com/ryangerardwilson/nebula), in the sql database
 `tesseract`. The managed tmux layer is installed under `~/.config/tmux/`.
 
